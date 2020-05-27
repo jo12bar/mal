@@ -23,7 +23,6 @@ impl Readline {
     pub fn new(prompt: &str) -> Self {
         let reader = Interface::new("mal").unwrap();
         reader.set_prompt(prompt).unwrap();
-        println!("history file location: {}", HISTORY_FILE.display());
         reader.load_history(HISTORY_FILE.as_path()).unwrap_or(());
 
         Self { reader }

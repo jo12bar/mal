@@ -8,7 +8,4 @@ edition = "2018"
 linefeed = "0.6"
 lazy_static = "1.4"
 dirs = "2.0"
-
-[dependencies.nom]
-version = "^5"
-features = ["regexp"]
+nom = "5"
