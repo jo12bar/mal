@@ -136,6 +136,7 @@ step5_EXCLUDES += plpgsql     # too slow for 10,000
 step5_EXCLUDES += plsql       # too slow for 10,000
 step5_EXCLUDES += powershell  # too slow for 10,000
 step5_EXCLUDES += $(if $(filter cpp,$(haxe_MODE)),haxe,) # cpp finishes 10,000, segfaults at 100,000
+step5_EXCLUDES += xslt		  # iteration cannot be expressed
 
 dist_EXCLUDES += mal
 # TODO: still need to implement dist
@@ -158,6 +159,7 @@ mal_TEST_OPTS = --start-timeout 60 --test-timeout 180
 else ifeq ($(MAL_IMPL),powershell)
 mal_TEST_OPTS = --start-timeout 60 --test-timeout 180
 endif
+xslt_TEST_OPTS = --test-timeout 120
 
 
 #
@@ -268,6 +270,7 @@ vimscript_STEP_TO_PROG =     impls/vimscript/$($(1)).vim
 wasm_STEP_TO_PROG =          impls/wasm/$($(1)).$(if $(filter lucet,$(wasm_MODE)),so,wasm)
 wren_STEP_TO_PROG =          impls/wren/$($(1)).wren
 yorick_STEP_TO_PROG =        impls/yorick/$($(1)).i
+xslt_STEP_TO_PROG =          impls/xslt/$($(1))
 zig_STEP_TO_PROG =           impls/zig/$($(1))
 
 #
