@@ -7,7 +7,7 @@ use mal_rust_jo12bar::{
 use std::collections::HashMap;
 
 /// This is the Lisp environment that holds all built-in functions.
-type Env<'a> = HashMap<HashMapKey, Expr<'a>>;
+type Env = HashMap<HashMapKey, Expr>;
 
 /// This represents a two-argument `Expr::Constant(Atom::Int)` **OR**
 /// `Expr::Constant(Atom::Float)` operation.
@@ -43,7 +43,7 @@ fn binary_num_op(
 }
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast<'a>(ast: &'a Expr, env: &'a Env) -> Result<Expr<'a>, Error<'a>> {
+fn eval_ast(ast: &Expr, env: &Env) -> Result<Expr, Error> {
     match ast {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
@@ -99,7 +99,7 @@ fn eval_ast<'a>(ast: &'a Expr, env: &'a Env) -> Result<Expr<'a>, Error<'a>> {
 }
 
 /// Evaluates an expression.
-fn eval<'a>(ast: &'a Expr, env: &'a Env) -> Result<Expr<'a>, Error<'a>> {
+fn eval(ast: &Expr, env: &Env) -> Result<Expr, Error> {
     match ast {
         // If `ast` is a list, then we evaluate it.
         Expr::List(exprs) => {

@@ -5,15 +5,15 @@ use std::rc::Rc;
 
 /// Some error types.
 #[derive(PartialEq, Clone, Debug)]
-pub enum Error<'a> {
+pub enum Error {
     /// For errors where the message is some arbritrary `String`.
     Str(String),
     /// For errors where the message is to involve an `Atom`.
-    Atom(Atom<'a>),
+    Atom(Atom),
 }
 
-impl std::fmt::Display for Error<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Str(s) => s.fmt(f),
             Self::Atom(a) => a.fmt(f),
@@ -23,7 +23,7 @@ impl std::fmt::Display for Error<'_> {
 
 /// Primitive values.
 #[derive(Clone)]
-pub enum Atom<'a> {
+pub enum Atom {
     Nil,
     Str(String),
     Bool(bool),
@@ -34,10 +34,10 @@ pub enum Atom<'a> {
 
     /// First field is the function itself, while the second field can be used
     /// for its name.
-    Func(Rc<dyn Fn(Vec<Expr>) -> Result<Expr, Error> + 'a>),
+    Func(Rc<dyn Fn(Vec<Expr>) -> Result<Expr, Error>>),
 }
 
-impl PartialEq for Atom<'_> {
+impl PartialEq for Atom {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Nil, Self::Nil) => true,
@@ -57,7 +57,7 @@ impl PartialEq for Atom<'_> {
     }
 }
 
-impl std::fmt::Display for Atom<'_> {
+impl std::fmt::Display for Atom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Nil => write!(f, "nil"),
@@ -72,7 +72,7 @@ impl std::fmt::Display for Atom<'_> {
     }
 }
 
-impl std::fmt::Debug for Atom<'_> {
+impl std::fmt::Debug for Atom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Nil => write!(f, "Nil"),
@@ -102,7 +102,7 @@ pub enum HashMapKey {
     Sym(String),
 }
 
-impl std::convert::TryFrom<Atom<'_>> for HashMapKey {
+impl std::convert::TryFrom<Atom> for HashMapKey {
     type Error = String;
 
     fn try_from(atom: Atom) -> Result<Self, Self::Error> {
@@ -133,15 +133,15 @@ impl std::fmt::Display for HashMapKey {
 /// An expression. Could just be a single `Atom`, or it could be something like
 /// a list or a function invocation.
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expr<'a> {
+pub enum Expr {
     Comment,
-    Constant(Atom<'a>),
-    List(Vec<Expr<'a>>),
-    Vec(Vec<Expr<'a>>),
-    HashMap(HashMap<HashMapKey, Expr<'a>>),
+    Constant(Atom),
+    List(Vec<Expr>),
+    Vec(Vec<Expr>),
+    HashMap(HashMap<HashMapKey, Expr>),
 }
 
-impl<'a> Expr<'a> {
+impl Expr {
     /// A "reader macro." Wraps an `Expr` like this:
     ///
     /// | Input   | Output         |
@@ -207,16 +207,13 @@ impl<'a> Expr<'a> {
     }
 
     /// Creates a new `Atom::Func` wrapped in a `Expr::Constant`.
-    pub fn func<F>(f: F) -> Self
-    where
-        F: Fn(Vec<Expr>) -> Result<Expr, Error> + 'a,
-    {
+    pub fn func(f: impl Fn(Vec<Expr>) -> Result<Expr, Error> + 'static) -> Self {
         Self::Constant(Atom::Func(Rc::new(f)))
     }
 
     /// Apply arguments to a function. Will return an `Error` if you attempt to
     /// call a non-function `Expr`.
-    pub fn apply<'b>(&'a self, args: Vec<Expr<'b>>) -> Result<Expr<'b>, Error<'b>> {
+    pub fn apply(&self, args: Vec<Expr>) -> Result<Expr, Error> {
         match self {
             Self::Constant(Atom::Func(f)) => f(args),
 
@@ -225,7 +222,7 @@ impl<'a> Expr<'a> {
     }
 }
 
-impl std::fmt::Display for Expr<'_> {
+impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Comment => write!(f, ""),
