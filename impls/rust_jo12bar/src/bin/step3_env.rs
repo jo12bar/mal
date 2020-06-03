@@ -258,6 +258,8 @@ fn main() {
 
     while let Some(line) = readline.get() {
         if !line.is_empty() {
+            readline.save_history();
+
             match rep(line, builtin_env.clone()) {
                 Ok(out) => pr_str(out),
                 Err(e) => eprintln!("Error: {}", e),
