@@ -140,7 +140,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                         }
                     }
 
-                    // If the first expression in the list, `expr01, is the
+                    // If the first expression in the list, `expr01`, is the
                     // symbol "let*", then create a new environment using the
                     // current environment as the "outer" environment. The first
                     // parameter is a list of new bindings in the "let*" env.
