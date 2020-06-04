@@ -67,7 +67,7 @@ impl std::fmt::Display for Atom {
             Self::Float(fl) => fl.fmt(f),
             Self::Sym(sym) => sym.fmt(f),
             Self::Keyword(kwd) => write!(f, ":{}", kwd),
-            Self::Func(func) => write!(f, "#<fn at {:p}>", func),
+            Self::Func(func) => write!(f, "#<function at {:p}>", *func),
         }
     }
 }
@@ -85,7 +85,7 @@ impl std::fmt::Debug for Atom {
             Self::Func(func) => write!(
                 f,
                 "Func(Rc<dyn Fn(Vec<Expr>) -> Result<Expr, Error>> at {:p})",
-                func
+                *func
             ),
         }
     }
