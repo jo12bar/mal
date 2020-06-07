@@ -1,4 +1,4 @@
-use mal_rust_jo12bar::{printer::pr_str, reader::read_line, readline::Readline};
+use mal_rust_jo12bar::{reader::read_line, readline::Readline};
 
 fn main() {
     let mut readline = Readline::new("mal> ");
@@ -7,7 +7,7 @@ fn main() {
         // For now, just print the line back out.
         if !line.is_empty() {
             match read_line(&line.as_str()) {
-                Ok(expr) => pr_str(expr),
+                Ok(expr) => println!("{}", expr.pr_str(true)),
                 Err(e) => eprintln!("{}", e),
             }
 

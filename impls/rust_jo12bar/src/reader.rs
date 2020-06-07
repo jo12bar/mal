@@ -4,9 +4,9 @@ use crate::types::{Atom, Expr, HashMapKey};
 
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, tag, take_while1},
-    character::complete::{char, digit1, none_of, one_of},
-    combinator::{cut, map, map_res, not, value},
+    bytes::complete::{escaped_transform, tag, take_while1},
+    character::complete::{char, digit1, none_of},
+    combinator::{cut, map, map_res, not, opt, value},
     error::{context, convert_error, ParseError, VerboseError},
     multi::{many0, many1},
     number::complete::double,
@@ -66,12 +66,17 @@ fn parse_number<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Atom
 }
 
 /// Parses a string of characters, allowing for escape chars.
-fn parse_string_of_chars<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    escaped(
-        take_while1(|c| c != '\\' && c != '"'),
-        '\\',
-        one_of("\"\\/bfnrtu"),
-    )(i)
+fn parse_string_of_chars<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, String, E> {
+    escaped_transform(take_while1(|c| c != '\\' && c != '"'), '\\', |s: &str| {
+        alt((
+            value("\\", tag("\\")),
+            value("\"", tag("\"")),
+            value("\0", tag("0")),
+            value("\n", tag("n")),
+            value("\r", tag("r")),
+            value("\t", tag("t")),
+        ))(s)
+    })(i)
 }
 
 /// Parses a string, like `"foo"`.
@@ -81,10 +86,13 @@ fn parse_string<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Atom
             "string",
             preceded(
                 char('\"'),
-                cut(terminated(parse_string_of_chars, char('\"'))),
+                cut(terminated(
+                    map(opt(parse_string_of_chars), |o| dbg!(o.unwrap_or_default())),
+                    char('\"'),
+                )),
             ),
         ),
-        |s| Atom::Str(String::from(s)),
+        Atom::Str,
     )(i)
 }
 
@@ -282,7 +290,7 @@ fn parse_hashmap<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Exp
 fn parse_quote<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Expr, E> {
     map(
         context("quote", preceded(char('\''), cut(parse_expr))),
-        Expr::quote,
+        Expr::reader_macro_quote,
     )(i)
 }
 
@@ -303,7 +311,7 @@ fn parse_quasiquote<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, 
             "reader macro quasiquote",
             preceded(char('`'), cut(parse_expr)),
         ),
-        Expr::quasiquote,
+        Expr::reader_macro_quasiquote,
     )(i)
 }
 
@@ -311,7 +319,7 @@ fn parse_quasiquote<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, 
 fn parse_unquote<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Expr, E> {
     map(
         context("reader macro unquote", preceded(char('~'), cut(parse_expr))),
-        Expr::unquote,
+        Expr::reader_macro_unquote,
     )(i)
 }
 
@@ -322,7 +330,7 @@ fn parse_splice_unquote<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a s
             "reader macro splice-unquote",
             preceded(tag("~@"), cut(parse_expr)),
         ),
-        Expr::splice_unquote,
+        Expr::reader_macro_splice_unquote,
     )(i)
 }
 
@@ -330,7 +338,7 @@ fn parse_splice_unquote<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a s
 fn parse_deref<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Expr, E> {
     map(
         context("reader macro deref", preceded(char('@'), cut(parse_expr))),
-        Expr::deref,
+        Expr::reader_macro_deref,
     )(i)
 }
 
@@ -348,7 +356,7 @@ fn parse_with_meta<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, E
                 ))),
             ),
         ),
-        |(expr1, _, expr2)| Expr::with_meta(expr1, expr2),
+        |(expr1, _, expr2)| Expr::reader_macro_with_meta(expr1, expr2),
     )(i)
 }
 

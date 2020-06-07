@@ -1,7 +1,7 @@
 //! MAL types.
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Some error types.
 #[derive(PartialEq, Clone, Debug)]
@@ -34,7 +34,7 @@ pub enum Atom {
 
     /// First field is the function itself, while the second field can be used
     /// for its name.
-    Func(Rc<dyn Fn(Vec<Expr>) -> Result<Expr, Error>>),
+    Func(Arc<dyn Fn(Vec<Expr>) -> Result<Expr, Error> + Send + Sync>),
 }
 
 impl PartialEq for Atom {
@@ -91,6 +91,17 @@ impl std::fmt::Debug for Atom {
     }
 }
 
+impl std::convert::From<HashMapKey> for Atom {
+    fn from(hmk: HashMapKey) -> Self {
+        match hmk {
+            HashMapKey::Str(s) => Self::Str(s),
+            HashMapKey::Keyword(kwd) => Self::Keyword(kwd),
+            HashMapKey::Int(i) => Self::Int(i),
+            HashMapKey::Sym(sym) => Self::Sym(sym),
+        }
+    }
+}
+
 /// The possible types that can be used for `Expr::HashMap` keys.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HashMapKey {
@@ -132,7 +143,7 @@ impl std::fmt::Display for HashMapKey {
 
 /// An expression. Could just be a single `Atom`, or it could be something like
 /// a list or a function invocation.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Comment,
     Constant(Atom),
@@ -147,7 +158,7 @@ impl Expr {
     /// | Input   | Output         |
     /// |:------- |:-------------- |
     /// | `'EXPR` | `(quote EXPR)` |
-    pub fn quote(expr: Self) -> Self {
+    pub fn reader_macro_quote(expr: Self) -> Self {
         Self::List(vec![Self::Constant(Atom::Sym("quote".to_string())), expr])
     }
 
@@ -156,7 +167,7 @@ impl Expr {
     /// | Input       | Output              |
     /// |:----------- |:------------------- |
     /// | `` `EXPR `` | `(quasiquote EXPR)` |
-    pub fn quasiquote(expr: Self) -> Self {
+    pub fn reader_macro_quasiquote(expr: Self) -> Self {
         Self::List(vec![
             Self::Constant(Atom::Sym("quasiquote".to_string())),
             expr,
@@ -168,7 +179,7 @@ impl Expr {
     /// | Input   | Output           |
     /// |:------- |:---------------- |
     /// | `~EXPR` | `(unquote EXPR)` |
-    pub fn unquote(expr: Self) -> Self {
+    pub fn reader_macro_unquote(expr: Self) -> Self {
         Self::List(vec![Self::Constant(Atom::Sym("unquote".to_string())), expr])
     }
 
@@ -177,7 +188,7 @@ impl Expr {
     /// | Input    | Output                  |
     /// |:-------- |:----------------------- |
     /// | `~@EXPR` | `(splice-unquote EXPR)` |
-    pub fn splice_unquote(expr: Self) -> Self {
+    pub fn reader_macro_splice_unquote(expr: Self) -> Self {
         Self::List(vec![
             Self::Constant(Atom::Sym("splice-unquote".to_string())),
             expr,
@@ -189,7 +200,7 @@ impl Expr {
     /// | Input   | Output         |
     /// |:------- |:-------------- |
     /// | `@EXPR` | `(deref EXPR)` |
-    pub fn deref(expr: Self) -> Self {
+    pub fn reader_macro_deref(expr: Self) -> Self {
         Self::List(vec![Self::Constant(Atom::Sym("deref".to_string())), expr])
     }
 
@@ -198,7 +209,7 @@ impl Expr {
     /// | Input | Output |
     /// |:--- |:--- |
     /// | `^EXPR1 EXPR2` | `(with-meta EXPR2 EXPR1)` |
-    pub fn with_meta(expr1: Self, expr2: Self) -> Self {
+    pub fn reader_macro_with_meta(expr1: Self, expr2: Self) -> Self {
         Self::List(vec![
             Self::Constant(Atom::Sym("with-meta".to_string())),
             expr2,
@@ -207,8 +218,8 @@ impl Expr {
     }
 
     /// Creates a new `Atom::Func` wrapped in a `Expr::Constant`.
-    pub fn func(f: impl Fn(Vec<Expr>) -> Result<Expr, Error> + 'static) -> Self {
-        Self::Constant(Atom::Func(Rc::new(f)))
+    pub fn func(f: impl Fn(Vec<Expr>) -> Result<Expr, Error> + Send + Sync + 'static) -> Self {
+        Self::Constant(Atom::Func(Arc::new(f)))
     }
 
     /// Apply arguments to a function. Will return an `Error` if you attempt to
@@ -218,6 +229,55 @@ impl Expr {
             Self::Constant(Atom::Func(f)) => f(args),
 
             _ => Err(Error::Str("Attempt to call a non-function!".to_string())),
+        }
+    }
+
+    /// Returns the count of items if this is a `Expr::List` or `Expr::Vec` or `Expr::HashMap`, `0`
+    /// if this is a `Expr::Constant(Atom::Nil)`, and an error otherwise.
+    pub fn count(&self) -> Result<Expr, Error> {
+        match self {
+            Self::List(v) | Self::Vec(v) => Ok(Expr::Constant(Atom::Int(v.len() as i64))),
+            Self::HashMap(hm) => Ok(Expr::Constant(Atom::Int(hm.len() as i64))),
+            Self::Constant(Atom::Nil) => Ok(Expr::Constant(Atom::Int(0))),
+            _ => Err(Error::Str(format!(
+                "count: invalid expression type; got {}",
+                self
+            ))),
+        }
+    }
+
+    /// - If this is a `Expr::List` or a `Expr::Vec`, returns true if the underlying
+    ///   vector is empty, and false otherwise.
+    /// - If this is a `Expr::HashMap`, returns true if the underlying `HashMap`
+    ///   is empty, and false otherwise.
+    /// - If this is a `Expr::Constant(Atom::Nil)`, returns true.
+    /// - Returns an error otherwise.
+    pub fn is_empty(&self) -> Result<Expr, Error> {
+        match self {
+            Self::List(v) | Self::Vec(v) => Ok(Expr::Constant(Atom::Bool(v.is_empty()))),
+            Self::HashMap(hm) => Ok(Expr::Constant(Atom::Bool(hm.is_empty()))),
+            Self::Constant(Atom::Nil) => Ok(Expr::Constant(Atom::Bool(true))),
+            _ => Err(Error::Str(format!(
+                "empty?: invalid expression type; got {}",
+                self
+            ))),
+        }
+    }
+}
+
+impl std::cmp::PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Comment, Self::Comment) => false,
+            (Self::Constant(a), Self::Constant(b)) => a == b,
+            (Self::HashMap(a), Self::HashMap(b)) => a == b,
+
+            (Self::List(a), Self::List(b))
+            | (Self::List(a), Self::Vec(b))
+            | (Self::Vec(a), Self::List(b))
+            | (Self::Vec(a), Self::Vec(b)) => a == b,
+
+            _ => false,
         }
     }
 }
