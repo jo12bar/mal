@@ -12,6 +12,13 @@ pub enum Error {
     Atom(Atom),
 }
 
+impl Error {
+    /// Create a `Box<Error>` with some arbritrary string.
+    pub fn s<T: ToString>(message: T) -> Box<dyn std::error::Error> {
+        Box::new(Self::Str(message.to_string()))
+    }
+}
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -20,6 +27,13 @@ impl std::fmt::Display for Error {
         }
     }
 }
+
+impl std::error::Error for Error {}
+
+/// A convenience type for expressing `Result<Expr, Box<dyn std::error::Error>>`.
+///
+/// Note that the `Error` enum in this module *happens* to implement `std::error::Error`.
+pub type ExprResult = Result<Expr, Box<dyn std::error::Error>>;
 
 /// Primitive values.
 #[derive(Clone)]
@@ -34,7 +48,7 @@ pub enum Atom {
 
     /// First field is the function itself, while the second field can be used
     /// for its name.
-    Func(Arc<dyn Fn(Vec<Expr>) -> Result<Expr, Error> + Send + Sync>),
+    Func(Arc<dyn Fn(Vec<Expr>) -> ExprResult + Send + Sync>),
 }
 
 impl PartialEq for Atom {
@@ -218,28 +232,28 @@ impl Expr {
     }
 
     /// Creates a new `Atom::Func` wrapped in a `Expr::Constant`.
-    pub fn func(f: impl Fn(Vec<Expr>) -> Result<Expr, Error> + Send + Sync + 'static) -> Self {
+    pub fn func(f: impl Fn(Vec<Expr>) -> ExprResult + Send + Sync + 'static) -> Self {
         Self::Constant(Atom::Func(Arc::new(f)))
     }
 
     /// Apply arguments to a function. Will return an `Error` if you attempt to
     /// call a non-function `Expr`.
-    pub fn apply(&self, args: Vec<Expr>) -> Result<Expr, Error> {
+    pub fn apply(&self, args: Vec<Expr>) -> ExprResult {
         match self {
             Self::Constant(Atom::Func(f)) => f(args),
 
-            _ => Err(Error::Str("Attempt to call a non-function!".to_string())),
+            _ => Err(Error::s("Attempt to call a non-function!")),
         }
     }
 
     /// Returns the count of items if this is a `Expr::List` or `Expr::Vec` or `Expr::HashMap`, `0`
     /// if this is a `Expr::Constant(Atom::Nil)`, and an error otherwise.
-    pub fn count(&self) -> Result<Expr, Error> {
+    pub fn count(&self) -> ExprResult {
         match self {
             Self::List(v) | Self::Vec(v) => Ok(Expr::Constant(Atom::Int(v.len() as i64))),
             Self::HashMap(hm) => Ok(Expr::Constant(Atom::Int(hm.len() as i64))),
             Self::Constant(Atom::Nil) => Ok(Expr::Constant(Atom::Int(0))),
-            _ => Err(Error::Str(format!(
+            _ => Err(Error::s(format!(
                 "count: invalid expression type; got {}",
                 self
             ))),
@@ -252,12 +266,12 @@ impl Expr {
     ///   is empty, and false otherwise.
     /// - If this is a `Expr::Constant(Atom::Nil)`, returns true.
     /// - Returns an error otherwise.
-    pub fn is_empty(&self) -> Result<Expr, Error> {
+    pub fn is_empty(&self) -> ExprResult {
         match self {
             Self::List(v) | Self::Vec(v) => Ok(Expr::Constant(Atom::Bool(v.is_empty()))),
             Self::HashMap(hm) => Ok(Expr::Constant(Atom::Bool(hm.is_empty()))),
             Self::Constant(Atom::Nil) => Ok(Expr::Constant(Atom::Bool(true))),
-            _ => Err(Error::Str(format!(
+            _ => Err(Error::s(format!(
                 "empty?: invalid expression type; got {}",
                 self
             ))),

@@ -3,13 +3,13 @@ use mal_rust_jo12bar::{
     env::{env_from_iter, env_get, env_new, env_set, Env},
     reader::read_line,
     readline::Readline,
-    types::{Atom, Error, Expr, HashMapKey as HMK},
+    types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
 };
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: Expr, env: Env) -> Result<Expr, Error> {
+fn eval_ast(ast: Expr, env: Env) -> ExprResult {
     match ast.clone() {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
@@ -17,7 +17,7 @@ fn eval_ast(ast: Expr, env: Env) -> Result<Expr, Error> {
             if let Some(func) = env_get(&env, &HMK::Sym(sym.clone())) {
                 Ok(func)
             } else {
-                Err(Error::Str(format!("Symbol \'{}\' not found", sym)))
+                Err(Error::s(format!("Symbol \'{}\' not found", sym)))
             }
         }
 
@@ -65,7 +65,7 @@ fn eval_ast(ast: Expr, env: Env) -> Result<Expr, Error> {
 }
 
 /// Evaluates an expression.
-fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
+fn eval(ast: Expr, env: Env) -> ExprResult {
     match ast.clone() {
         // If `ast` is a list, then we evaluate it.
         Expr::List(exprs) => {
@@ -119,7 +119,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                             func.apply(new_exprs[1..].to_vec())
                         }
 
-                        other => Err(Error::Str(format!(
+                        other => Err(Error::s(format!(
                             "Expected a list when evaluating a list.\nGot {}",
                             other
                         ))),
@@ -135,9 +135,9 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
 }
 
 /// Defines a new symbol in the current environment.
-fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
+fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> ExprResult {
     if exprs.len() != 3 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Wrong number of expressions after a \'def!\'.\n\
              Expected 2 expressions, found {}.",
             exprs.len() - 1,
@@ -155,7 +155,7 @@ fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
             Ok(evaluated_expr_2)
         }
 
-        expr1 => Err(Error::Str(format!(
+        expr1 => Err(Error::s(format!(
             "Expected a symbol after a \'def!\', found {}",
             expr1
         ))),
@@ -164,9 +164,9 @@ fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
 
 /// Defines a bunch of symbols in a new child `Env`, and then evaluates a
 /// parameter within the child `Env`.
-fn eval_let_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
+fn eval_let_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
     if exprs.len() != 3 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Wrong number of expressions after a \'let*\'.\nExpected 2 expressions, found {}.",
             exprs.len() - 1,
         )));
@@ -176,7 +176,7 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
         // There should be a even number of Expr's in
         // expr1_vec, because they're key/value pairs.
         Expr::List(expr1_vec) | Expr::Vec(expr1_vec) if expr1_vec.len() % 2 != 0 => {
-            Err(Error::Str(format!(
+            Err(Error::s(format!(
                 "Found an odd number of expressions inside the list after a \'let*\'.\n\
                  This could mean that one of the keys is missing a value, or one of\n\
                  the values is missing a key.\n\
@@ -200,7 +200,7 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
                     }
 
                     _ => {
-                        return Err(Error::Str(format!(
+                        return Err(Error::s(format!(
                             "Expected a symbol for a binding name in a \'let*\' binding list.\n\
                                              Found {}",
                             k
@@ -214,7 +214,7 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
             eval(exprs[2].clone(), let_env)
         }
 
-        expr1 => Err(Error::Str(format!(
+        expr1 => Err(Error::s(format!(
             "Expected a list after a \'let*\', found {}",
             expr1
         ))),
@@ -222,30 +222,30 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
 }
 
 /// Evaluates all the parameters, and returns the value of the last one.
-fn eval_do(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
+fn eval_do(exprs: Vec<Expr>, env: Env) -> ExprResult {
     match eval_ast(Expr::List(exprs[1..].to_vec()), env)? {
         Expr::List(evaluated_exprs) => Ok(evaluated_exprs
             .last()
             .unwrap_or(&Expr::Constant(Atom::Nil))
             .clone()),
 
-        _ => Err(Error::Str("Invalid \'do\' form.".to_string())),
+        _ => Err(Error::s("Invalid \'do\' form.".to_string())),
     }
 }
 
 /// An if-else statement.
-fn eval_if(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
+fn eval_if(exprs: Vec<Expr>, env: Env) -> ExprResult {
     // The length should be *at least* 3, for the symbol "if", the conditional,
     // and the "true" branch.
     if exprs.len() < 3 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Expected at least 2 expressions after an \'if\':\n\n\
              \t(if <condition> <true branch> [false branch])\n\n\
              Found {} expressions.",
             exprs.len() - 1,
         )));
     } else if exprs.len() > 4 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Too many expressions after an \'if\'.\n\
              Expected 2 to 3 expressions, found {}",
             exprs.len() - 1,
@@ -273,11 +273,11 @@ fn eval_if(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
 }
 
 /// A function closure (often called a lamba function in lisps.)
-fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
+fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
     // There should be two expressions after a "fn*": the arguments list and the
     // function body.
     if exprs.len() != 3 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Expected 2 expressions after a \'fn*\': the arguments list and the function body.\n\
              Found {}",
             exprs.len() - 1,
@@ -292,7 +292,7 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
         Expr::Vec(exprs) | Expr::List(exprs) => exprs,
 
         _ => {
-            return Err(Error::Str(format!(
+            return Err(Error::s(format!(
                 "Expected a list of symbols as an argument list after a \'fn*\'.\n\
                  Found {}",
                 fn_argument_list,
@@ -313,7 +313,7 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
 
     // If there were any non-symbols in the argument list, error out.
     if fn_arg_names.clone().any(|name| name.is_err()) {
-        return Err(Error::Str(
+        return Err(Error::s(
             fn_arg_names
                 .filter_map(|name| name.err())
                 .collect::<Vec<String>>()
@@ -344,7 +344,7 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
             .unwrap();
 
         if fn_arg_keys[fn_arg_keys.len() - 2] != fn_arg_keys[ampersand_index] {
-            return Err(Error::Str(format!(
+            return Err(Error::s(format!(
                 "Expected one symbol after the & in a fn* argument list, found {}",
                 fn_arg_keys[(ampersand_index)..].len() - 1
             )));
@@ -361,13 +361,13 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> Result<Expr, Error> {
 
         // First, argument length check.
         if !has_var_arg && (args.len() != n_positional_args) {
-            return Err(Error::Str(format!(
+            return Err(Error::s(format!(
                 "Expected {} arguments passed to fn*, found {}",
                 n_positional_args,
                 args.len(),
             )));
         } else if has_var_arg && (args.len() < n_positional_args) {
-            return Err(Error::Str(format!(
+            return Err(Error::s(format!(
                 "Expected at least {} arguments passed to fn*, found {}",
                 n_positional_args,
                 args.len(),
@@ -405,24 +405,23 @@ fn print(ast: Expr) -> String {
 }
 
 /// The main REPL.
-fn rep(line: String, env: Env) -> Result<String, Error> {
-    match read_line(&line) {
+fn rep(line: impl ToString, env: Env) -> Result<String, Box<dyn std::error::Error>> {
+    match read_line(&line.to_string()) {
         Ok(ast) => Ok(print(eval(ast, env)?)),
-        Err(err_string) => Err(Error::Str(err_string)),
+        Err(err_string) => Err(Error::s(err_string)),
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ==> core.rs: Namespace defined by Rust.
     let builtin_env = env_from_iter(NS.clone(), None);
 
     // ==> core.mal: Namespace defined by MAL.
     // Define the `not` function:
     rep(
-        "(def! not (fn* (a) (if a false true)))".to_string(),
+        "(def! not (fn* (a) (if a false true)))",
         builtin_env.clone(),
-    )
-    .unwrap();
+    )?;
 
     let mut readline = Readline::new("mal> ");
 
@@ -436,4 +435,6 @@ fn main() {
             }
         }
     }
+
+    Ok(())
 }

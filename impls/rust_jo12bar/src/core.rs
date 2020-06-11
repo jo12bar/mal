@@ -1,6 +1,6 @@
 //! Contains core MAL functions to be used by an interpreter, REPL, etc...
 
-use crate::types::{Atom, Error, Expr, HashMapKey as HMK};
+use crate::types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK};
 use lazy_static::lazy_static;
 
 /// This generates a function that tells you if a `Expr` is a certain type.
@@ -55,9 +55,9 @@ pub fn binary_num_op(
     int_op: impl Fn(i64, i64) -> i64,
     float_op: impl Fn(f64, f64) -> f64,
     args: Vec<Expr>,
-) -> Result<Expr, Error> {
+) -> ExprResult {
     if args.len() != 2 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Wrong number of arguments given to binary integer operator.\n\
              Expected 2 arguments, found {}.",
             args.len()
@@ -73,7 +73,7 @@ pub fn binary_num_op(
             Ok(Expr::Constant(Atom::Float(float_op(*a, *b))))
         }
 
-        _ => Err(Error::Str(
+        _ => Err(Error::s(
             "Arguments passed to binary numeric operator are of invalid type.".to_string(),
         )),
     }
@@ -87,13 +87,13 @@ pub fn binary_num_op(
 #[macro_export]
 macro_rules! mal_bin_op {
     ($fn_name:expr, $fn:expr $(,)?) => {{
-        use $crate::types::{Error, Expr, HashMapKey};
+        use $crate::types::{Error, Expr, ExprResult, HashMapKey};
 
         (
             HashMapKey::Sym($fn_name.to_string()),
-            Expr::func(|args: Vec<Expr>| -> Result<Expr, Error> {
+            Expr::func(|args: Vec<Expr>| -> ExprResult {
                 if args.len() != 2 {
-                    return Err(Error::Str(format!(
+                    return Err(Error::s(format!(
                         "{}: Expected 2 arguments, found {}",
                         $fn_name,
                         args.len(),
@@ -135,7 +135,7 @@ macro_rules! mal_bin_op {
 #[macro_export]
 macro_rules! mal_bin_num_op {
     ($func:expr) => {
-        |args: Vec<$crate::types::Expr>| -> Result<$crate::types::Expr, $crate::types::Error> {
+        |args: Vec<$crate::types::Expr>| -> $crate::types::ExprResult {
             $crate::core::binary_num_op($func, $func, args)
         }
     };
@@ -150,13 +150,13 @@ macro_rules! mal_bin_num_op {
 
                 (&Expr::Constant(Atom::Float(_)), &Expr::Constant(Atom::Int(_)))
                 | (&Expr::Constant(Atom::Int(_)), &Expr::Constant(Atom::Float(_))) => {
-                    Err(Error::Str(format!(
+                    Err(Error::s(format!(
                         "{}: {} and {} have incompatible types with each other",
                         $fn_name, a, b,
                     )))
                 }
 
-                _ => Err(Error::Str(format!(
+                _ => Err(Error::s(format!(
                     "{}: Expected two floats or two ints, found {} and {}",
                     $fn_name, a, b,
                 ))),
@@ -168,7 +168,7 @@ macro_rules! mal_bin_num_op {
 /// Call `pr_str` on each argument with `print_readably` set to true.
 /// Join them together with a space.
 /// Return the new `Atom::Str`.
-fn pr_str(args: Vec<Expr>) -> Result<Expr, Error> {
+fn pr_str(args: Vec<Expr>) -> ExprResult {
     Ok(Expr::Constant(Atom::Str(
         args.into_iter()
             .map(|arg| arg.pr_str(true))
@@ -182,7 +182,7 @@ fn pr_str(args: Vec<Expr>) -> Result<Expr, Error> {
 ///
 /// This should be called `str`, but it's called `str_fn` for name-conflict
 /// reasons :-)
-fn str_fn(args: Vec<Expr>) -> Result<Expr, Error> {
+fn str_fn(args: Vec<Expr>) -> ExprResult {
     Ok(Expr::Constant(Atom::Str(
         args.into_iter()
             .map(|arg| arg.pr_str(false))
@@ -194,7 +194,7 @@ fn str_fn(args: Vec<Expr>) -> Result<Expr, Error> {
 /// Call `pr_str` on each argument with `print_readably` set to true.
 /// Join them together with a space.
 /// Print the result to the screen, and then return `Stom::Nil`.
-fn prn(args: Vec<Expr>) -> Result<Expr, Error> {
+fn prn(args: Vec<Expr>) -> ExprResult {
     println!(
         "{}",
         args.into_iter()
@@ -211,7 +211,7 @@ fn prn(args: Vec<Expr>) -> Result<Expr, Error> {
 /// `Atom::Nil`.
 ///
 /// Should be called `println`, but naming conflicts are a thing :-)
-fn println_fn(args: Vec<Expr>) -> Result<Expr, Error> {
+fn println_fn(args: Vec<Expr>) -> ExprResult {
     println!(
         "{}",
         args.into_iter()

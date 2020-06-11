@@ -2,7 +2,7 @@ use mal_rust_jo12bar::{
     printer::pr_str,
     reader::read_line,
     readline::Readline,
-    types::{Atom, Error, Expr, HashMapKey},
+    types::{Atom, Error, Expr, ExprResult, HashMapKey},
 };
 use std::collections::HashMap;
 
@@ -18,9 +18,9 @@ fn binary_num_op(
     int_op: impl Fn(i64, i64) -> i64,
     float_op: impl Fn(f64, f64) -> f64,
     args: Vec<Expr>,
-) -> Result<Expr, Error> {
+) -> ExprResult {
     if args.len() != 2 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Wrong number of arguments given to binary integer operator.\n\
              Expected 2 arguments, found {}.",
             args.len()
@@ -36,14 +36,14 @@ fn binary_num_op(
             Ok(Expr::Constant(Atom::Float(float_op(a, b))))
         }
 
-        _ => Err(Error::Str(
+        _ => Err(Error::s(
             "Arguments passed to binary numeric operator are of invalid type.".to_string(),
         )),
     }
 }
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: &Expr, env: &Env) -> Result<Expr, Error> {
+fn eval_ast(ast: &Expr, env: &Env) -> ExprResult {
     match ast {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
@@ -51,7 +51,7 @@ fn eval_ast(ast: &Expr, env: &Env) -> Result<Expr, Error> {
             if let Some(func) = env.get(&HashMapKey::Sym(sym.clone())) {
                 Ok(func.clone())
             } else {
-                Err(Error::Str(format!("Unknown symbol: {}", sym)))
+                Err(Error::s(format!("Unknown symbol: {}", sym)))
             }
         }
 
@@ -99,7 +99,7 @@ fn eval_ast(ast: &Expr, env: &Env) -> Result<Expr, Error> {
 }
 
 /// Evaluates an expression.
-fn eval(ast: &Expr, env: &Env) -> Result<Expr, Error> {
+fn eval(ast: &Expr, env: &Env) -> ExprResult {
     match ast {
         // If `ast` is a list, then we evaluate it.
         Expr::List(exprs) => {
@@ -114,7 +114,7 @@ fn eval(ast: &Expr, env: &Env) -> Result<Expr, Error> {
                         func.apply(new_exprs[1..].to_vec())
                     }
 
-                    other => Err(Error::Str(format!(
+                    other => Err(Error::s(format!(
                         "Expected a list when evaluating a list.\nGot {}",
                         other
                     ))),

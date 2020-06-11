@@ -3,7 +3,7 @@ use mal_rust_jo12bar::{
     printer::pr_str,
     reader::read_line,
     readline::Readline,
-    types::{Atom, Error, Expr, HashMapKey as HMK},
+    types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
 };
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -17,9 +17,9 @@ fn binary_num_op(
     int_op: impl Fn(i64, i64) -> i64,
     float_op: impl Fn(f64, f64) -> f64,
     args: Vec<Expr>,
-) -> Result<Expr, Error> {
+) -> ExprResult {
     if args.len() != 2 {
-        return Err(Error::Str(format!(
+        return Err(Error::s(format!(
             "Wrong number of arguments given to binary integer operator.\n\
              Expected 2 arguments, found {}.",
             args.len()
@@ -35,14 +35,14 @@ fn binary_num_op(
             Ok(Expr::Constant(Atom::Float(float_op(a, b))))
         }
 
-        _ => Err(Error::Str(
-            "Arguments passed to binary numeric operator are of invalid type.".to_string(),
+        _ => Err(Error::s(
+            "Arguments passed to binary numeric operator are of invalid type.",
         )),
     }
 }
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: Expr, env: Env) -> Result<Expr, Error> {
+fn eval_ast(ast: Expr, env: Env) -> ExprResult {
     match ast.clone() {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
@@ -50,7 +50,7 @@ fn eval_ast(ast: Expr, env: Env) -> Result<Expr, Error> {
             if let Some(func) = env_get(&env, &HMK::Sym(sym.clone())) {
                 Ok(func)
             } else {
-                Err(Error::Str(format!("Symbol \'{}\' not found", sym)))
+                Err(Error::s(format!("Symbol \'{}\' not found", sym)))
             }
         }
 
@@ -98,7 +98,7 @@ fn eval_ast(ast: Expr, env: Env) -> Result<Expr, Error> {
 }
 
 /// Evaluates an expression.
-fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
+fn eval(ast: Expr, env: Env) -> ExprResult {
     match ast.clone() {
         // If `ast` is a list, then we evaluate it.
         Expr::List(exprs) => {
@@ -114,7 +114,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                     // environment `env`.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "def!" => {
                         if exprs.len() != 3 {
-                            return Err(Error::Str(format!(
+                            return Err(Error::s(format!(
                                 "Wrong number of expressions after a \'def!\'.\nExpected 2 expressions, found {}.",
                                 exprs.len() - 1,
                             )));
@@ -133,7 +133,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                                 Ok(evaluated_expr_2)
                             }
 
-                            _ => Err(Error::Str(format!(
+                            _ => Err(Error::s(format!(
                                 "Expected a symbol after a \'def!\', found {}",
                                 expr1
                             ))),
@@ -148,7 +148,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                     // env.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "let*" => {
                         if exprs.len() != 3 {
-                            return Err(Error::Str(format!(
+                            return Err(Error::s(format!(
                                 "Wrong number of expressions after a \'let*\'.\nExpected 2 expressions, found {}.",
                                 exprs.len() - 1,
                             )));
@@ -159,7 +159,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                         match expr1 {
                             // There should be a even number of Expr's in
                             // expr1_vec, because they're key/value pairs.
-                            Expr::List(expr1_vec) | Expr::Vec(expr1_vec) if expr1_vec.len() % 2 != 0 => Err(Error::Str(format!(
+                            Expr::List(expr1_vec) | Expr::Vec(expr1_vec) if expr1_vec.len() % 2 != 0 => Err(Error::s(format!(
                                 "Found an odd number of expressions inside the list after a \'let*\'.\n\
                                  This could mean that one of the keys is missing a value, or one of\n\
                                  the values is missing a key.\n\
@@ -180,7 +180,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                                             env_set(&let_env, HMK::try_from(sym.clone()).unwrap(), evaluated_v);
                                         }
 
-                                        _ => return Err(Error::Str(format!(
+                                        _ => return Err(Error::s(format!(
                                             "Expected a symbol for a binding name in a \'let*\' binding list.\n\
                                              Found {}", k
                                         ))),
@@ -192,7 +192,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                                 eval(exprs[2].clone(), let_env)
                             }
 
-                            _ => Err(Error::Str(format!(
+                            _ => Err(Error::s(format!(
                                 "Expected a list after a \'let*\', found {}",
                                 expr1
                             ))),
@@ -208,7 +208,7 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
                             func.apply(new_exprs[1..].to_vec())
                         }
 
-                        other => Err(Error::Str(format!(
+                        other => Err(Error::s(format!(
                             "Expected a list when evaluating a list.\nGot {}",
                             other
                         ))),
@@ -224,10 +224,10 @@ fn eval(ast: Expr, env: Env) -> Result<Expr, Error> {
 }
 
 /// The main REPL.
-fn rep(line: String, env: Env) -> Result<Expr, Error> {
+fn rep(line: String, env: Env) -> ExprResult {
     match read_line(&line) {
         Ok(ast) => eval(ast, env),
-        Err(err_string) => Err(Error::Str(err_string)),
+        Err(err_string) => Err(Error::s(err_string)),
     }
 }
 
