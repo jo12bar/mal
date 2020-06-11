@@ -110,7 +110,7 @@ fn eval(ast: &Expr, env: &Env) -> Result<Expr, Error> {
                 // Otherwise, call `eval_ast` to get a new evaluated list.
                 match eval_ast(ast, env)? {
                     Expr::List(new_exprs) => {
-                        let func = new_exprs.clone().first().unwrap().clone();
+                        let func = new_exprs.first().unwrap().clone();
                         func.apply(new_exprs[1..].to_vec())
                     }
 
