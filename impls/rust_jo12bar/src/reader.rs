@@ -417,7 +417,7 @@ pub fn parse_line_and_print_ast(s: &str) {
 pub fn read_line(s: &str) -> std::result::Result<Expr, String> {
     match parse_expr::<VerboseError<&str>>(s) {
         Err(Err::Error(e)) | Err(Err::Failure(e)) => {
-            std::result::Result::Err(format!("===== ERROR!!! =====\n\n{}", convert_error(s, e)))
+            std::result::Result::Err(format!("PARSE ERROR:\n\n{}", convert_error(s, e)))
         }
         Ok((_, expr)) => Ok(expr),
         _ => std::result::Result::Err("Unknown/incomplete error".into()),

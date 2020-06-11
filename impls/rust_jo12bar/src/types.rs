@@ -98,7 +98,7 @@ impl std::fmt::Debug for Atom {
             Self::Keyword(kwd) => write!(f, "Keyword({:?})", kwd),
             Self::Func(func) => write!(
                 f,
-                "Func(Rc<dyn Fn(Vec<Expr>) -> Result<Expr, Error>> at {:p})",
+                "Func(Rc<dyn Fn(Vec<Expr>) -> ExprResult> at {:p})",
                 *func
             ),
         }
@@ -128,7 +128,7 @@ pub enum HashMapKey {
 }
 
 impl std::convert::TryFrom<Atom> for HashMapKey {
-    type Error = String;
+    type Error = Error;
 
     fn try_from(atom: Atom) -> Result<Self, Self::Error> {
         match atom {
@@ -136,10 +136,26 @@ impl std::convert::TryFrom<Atom> for HashMapKey {
             Atom::Keyword(k) => Ok(Self::Keyword(k)),
             Atom::Int(i) => Ok(Self::Int(i)),
             Atom::Sym(s) => Ok(Self::Sym(s)),
-            other_atom_type => Err(format!(
+            other_atom_type => Err(Error::Str(format!(
                 "Cannot use {:?} as a hash-map key!",
                 other_atom_type
-            )),
+            ))),
+        }
+    }
+}
+
+impl std::convert::TryFrom<Expr> for HashMapKey {
+    type Error = Error;
+
+    fn try_from(expr: Expr) -> Result<Self, Self::Error> {
+        use std::convert::TryInto;
+
+        match expr {
+            Expr::Constant(atom) => atom.try_into(),
+            other_expr_type => Err(Error::Str(format!(
+                "Cannot use {:?} as a hash-map key!",
+                other_expr_type,
+            ))),
         }
     }
 }
@@ -329,6 +345,17 @@ impl std::fmt::Display for Expr {
                     .collect::<Vec<_>>()
                     .join(" ")
             ),
+        }
+    }
+}
+
+impl std::convert::From<HashMapKey> for Expr {
+    fn from(hmk: HashMapKey) -> Self {
+        match hmk {
+            HashMapKey::Int(i) => Self::Constant(Atom::Int(i)),
+            HashMapKey::Keyword(k) => Self::Constant(Atom::Keyword(k)),
+            HashMapKey::Str(s) => Self::Constant(Atom::Str(s)),
+            HashMapKey::Sym(s) => Self::Constant(Atom::Sym(s)),
         }
     }
 }
