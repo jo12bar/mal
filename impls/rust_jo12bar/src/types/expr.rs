@@ -1,175 +1,5 @@
-//! MAL types.
-
-use std::collections::HashMap;
-use std::sync::Arc;
-
-/// Some error types.
-#[derive(PartialEq, Clone, Debug)]
-pub enum Error {
-    /// For errors where the message is some arbritrary `String`.
-    Str(String),
-    /// For errors where the message is to involve an `Atom`.
-    Atom(Atom),
-}
-
-impl Error {
-    /// Create a `Box<Error>` with some arbritrary string.
-    pub fn s<T: ToString>(message: T) -> Box<dyn std::error::Error> {
-        Box::new(Self::Str(message.to_string()))
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Str(s) => s.fmt(f),
-            Self::Atom(a) => a.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-/// A convenience type for expressing `Result<Expr, Box<dyn std::error::Error>>`.
-///
-/// Note that the `Error` enum in this module *happens* to implement `std::error::Error`.
-pub type ExprResult = Result<Expr, Box<dyn std::error::Error>>;
-
-/// Primitive values.
-#[derive(Clone)]
-pub enum Atom {
-    Nil,
-    Str(String),
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    Sym(String),
-    Keyword(String),
-
-    /// First field is the function itself, while the second field can be used
-    /// for its name.
-    Func(Arc<dyn Fn(Vec<Expr>) -> ExprResult + Send + Sync>),
-}
-
-impl PartialEq for Atom {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Nil, Self::Nil) => true,
-            (Self::Str(ref a), Self::Str(ref b)) => a == b,
-            (Self::Bool(ref a), Self::Bool(ref b)) => a == b,
-            (Self::Int(ref a), Self::Int(ref b)) => a == b,
-            (Self::Float(ref a), Self::Float(ref b)) => a == b,
-            (Self::Sym(ref a), Self::Sym(ref b)) => a == b,
-            (Self::Keyword(ref a), Self::Keyword(ref b)) => a == b,
-
-            // Two functions can never equal each other.
-            (Self::Func(..), Self::Func(..)) => false,
-
-            // Two atoms of differing typw cannot equal each other.
-            _ => false,
-        }
-    }
-}
-
-impl std::fmt::Display for Atom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Nil => write!(f, "nil"),
-            Self::Str(s) => write!(f, "\"{}\"", s),
-            Self::Bool(b) => b.fmt(f),
-            Self::Int(i) => i.fmt(f),
-            Self::Float(fl) => fl.fmt(f),
-            Self::Sym(sym) => sym.fmt(f),
-            Self::Keyword(kwd) => write!(f, ":{}", kwd),
-            Self::Func(func) => write!(f, "#<function at {:p}>", *func),
-        }
-    }
-}
-
-impl std::fmt::Debug for Atom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Nil => write!(f, "Nil"),
-            Self::Str(s) => write!(f, "Str({:?})", s),
-            Self::Bool(b) => write!(f, "Bool({:?})", b),
-            Self::Int(i) => write!(f, "Int({:?})", i),
-            Self::Float(fl) => write!(f, "Float({:?})", fl),
-            Self::Sym(sym) => write!(f, "Sym({:?})", sym),
-            Self::Keyword(kwd) => write!(f, "Keyword({:?})", kwd),
-            Self::Func(func) => write!(
-                f,
-                "Func(Rc<dyn Fn(Vec<Expr>) -> ExprResult> at {:p})",
-                *func
-            ),
-        }
-    }
-}
-
-impl std::convert::From<HashMapKey> for Atom {
-    fn from(hmk: HashMapKey) -> Self {
-        match hmk {
-            HashMapKey::Str(s) => Self::Str(s),
-            HashMapKey::Keyword(kwd) => Self::Keyword(kwd),
-            HashMapKey::Int(i) => Self::Int(i),
-            HashMapKey::Sym(sym) => Self::Sym(sym),
-        }
-    }
-}
-
-/// The possible types that can be used for `Expr::HashMap` keys.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum HashMapKey {
-    Str(String),
-    Keyword(String),
-    Int(i64),
-    /// Symbols as `HashMapKey`s should be for internal, non-user-accessible use
-    /// only (i.e. not part of MAL itself).
-    Sym(String),
-}
-
-impl std::convert::TryFrom<Atom> for HashMapKey {
-    type Error = Error;
-
-    fn try_from(atom: Atom) -> Result<Self, Self::Error> {
-        match atom {
-            Atom::Str(s) => Ok(Self::Str(s)),
-            Atom::Keyword(k) => Ok(Self::Keyword(k)),
-            Atom::Int(i) => Ok(Self::Int(i)),
-            Atom::Sym(s) => Ok(Self::Sym(s)),
-            other_atom_type => Err(Error::Str(format!(
-                "Cannot use {:?} as a hash-map key!",
-                other_atom_type
-            ))),
-        }
-    }
-}
-
-impl std::convert::TryFrom<Expr> for HashMapKey {
-    type Error = Error;
-
-    fn try_from(expr: Expr) -> Result<Self, Self::Error> {
-        use std::convert::TryInto;
-
-        match expr {
-            Expr::Constant(atom) => atom.try_into(),
-            other_expr_type => Err(Error::Str(format!(
-                "Cannot use {:?} as a hash-map key!",
-                other_expr_type,
-            ))),
-        }
-    }
-}
-
-impl std::fmt::Display for HashMapKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Str(s) => write!(f, "\"{}\"", s),
-            Self::Keyword(k) => write!(f, ":{}", k),
-            Self::Int(i) => i.fmt(f),
-            Self::Sym(sym) => write!(f, "{}", sym),
-        }
-    }
-}
+use super::{Atom, Error, ExprResult, HashMapKey};
+use std::{cmp::PartialEq, collections::HashMap, convert::From, fmt, sync::Arc};
 
 /// An expression. Could just be a single `Atom`, or it could be something like
 /// a list or a function invocation.
@@ -295,7 +125,7 @@ impl Expr {
     }
 }
 
-impl std::cmp::PartialEq for Expr {
+impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Comment, Self::Comment) => false,
@@ -312,8 +142,8 @@ impl std::cmp::PartialEq for Expr {
     }
 }
 
-impl std::fmt::Display for Expr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Comment => write!(f, ""),
 
@@ -349,7 +179,7 @@ impl std::fmt::Display for Expr {
     }
 }
 
-impl std::convert::From<HashMapKey> for Expr {
+impl From<HashMapKey> for Expr {
     fn from(hmk: HashMapKey) -> Self {
         match hmk {
             HashMapKey::Int(i) => Self::Constant(Atom::Int(i)),
