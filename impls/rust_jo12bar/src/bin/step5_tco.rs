@@ -1,6 +1,6 @@
 use mal_rust_jo12bar::{
     core::NS,
-    env::{env_from_iter, env_get, env_new, env_set, Env},
+    env::{env_bind, env_from_iter, env_get, env_new, env_set, Env},
     reader::read_line,
     readline::Readline,
     types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
@@ -124,8 +124,35 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
                         // some sort of MAL function.
                         _ => match eval_ast(ast, env)? {
                             Expr::List(new_exprs) => {
-                                let func = new_exprs.first().unwrap();
-                                return func.apply(new_exprs[1..].to_vec());
+                                let func = &new_exprs[0];
+                                let args = new_exprs[1..].to_vec();
+                                match func {
+                                    // For simple functions:
+                                    Expr::Constant(Atom::Func(_)) => return func.apply(args),
+
+                                    // For functions that support tail call optimization:
+                                    Expr::Constant(Atom::FnStar {
+                                        body,
+                                        env: fenv,
+                                        params,
+                                        is_variadic,
+                                        ..
+                                    }) => {
+                                        let body = &**body;
+
+                                        // Bind the function's env, and set ast to the function body.
+                                        // The function will then be evaluated on the next loop.
+                                        env = env_bind(
+                                            params.clone(),
+                                            args,
+                                            *is_variadic,
+                                            Some(fenv.clone()),
+                                        )?;
+                                        ast = body.clone();
+                                    }
+
+                                    _ => return Err(Error::s("Attempt to call a non-function!")),
+                                }
                             }
 
                             other => {
@@ -293,129 +320,7 @@ fn eval_if(exprs: Vec<Expr>, env: Env) -> ExprResult {
 
 /// A function closure (often called a lamba function in lisps.)
 fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
-    // There should be two expressions after a "fn*": the arguments list and the
-    // function body.
-    if exprs.len() != 3 {
-        return Err(Error::s(format!(
-            "Expected 2 expressions after a \'fn*\': the arguments list and the function body.\n\
-             Found {}",
-            exprs.len() - 1,
-        )));
-    }
-
-    let fn_argument_list = &exprs[1];
-    let fn_body = exprs[2].clone();
-
-    // fn_argument_list should literally be a `Expr::List` of symbols.
-    let fn_argument_vec = match fn_argument_list {
-        Expr::Vec(exprs) | Expr::List(exprs) => exprs,
-
-        _ => {
-            return Err(Error::s(format!(
-                "Expected a list of symbols as an argument list after a \'fn*\'.\n\
-                 Found {}",
-                fn_argument_list,
-            )));
-        }
-    };
-
-    let fn_arg_names = fn_argument_vec
-        .iter()
-        // Each expression should be a Expr::Constant(Atom::Sym):
-        .map(|expr| match expr {
-            Expr::Constant(sym @ Atom::Sym(..)) => Ok(sym),
-            _ => Err(format!(
-                "Expected a symbol in a fn* argument list, found {}",
-                expr
-            )),
-        });
-
-    // If there were any non-symbols in the argument list, error out.
-    if fn_arg_names.clone().any(|name| name.is_err()) {
-        return Err(Error::s(
-            fn_arg_names
-                .filter_map(|name| name.err())
-                .collect::<Vec<String>>()
-                .join("\n"),
-        ));
-    }
-
-    // If there is a `&` symbol, then:
-    // - There should only be one symbol after it
-    // - That one symbol will be bound to all the rest of the arguments passed
-    //   to the function that don't match up with preceding symbols.
-    let has_var_arg = fn_arg_names
-        .clone()
-        .filter_map(|name| name.ok())
-        .any(|name| name == &Atom::Sym("&".to_string()));
-
-    // Pre-convert argument names to `HashMapKey`'s.
-    let fn_arg_keys: Vec<HMK> = fn_arg_names
-        .filter_map(|name| name.ok())
-        .map(|sym| HMK::try_from(sym.clone()).unwrap())
-        .collect();
-
-    if has_var_arg {
-        // There must only be one item after the '&':
-        let ampersand_index = fn_arg_keys
-            .iter()
-            .position(|r| r == &HMK::Sym("&".to_string()))
-            .unwrap();
-
-        if fn_arg_keys[fn_arg_keys.len() - 2] != fn_arg_keys[ampersand_index] {
-            return Err(Error::s(format!(
-                "Expected one symbol after the & in a fn* argument list, found {}",
-                fn_arg_keys[(ampersand_index)..].len() - 1
-            )));
-        }
-    }
-
-    // At this point, all preliminary validation has passed. So, return a closure:
-    Ok(Expr::func(move |args| {
-        let n_positional_args = if has_var_arg {
-            fn_arg_keys.len() - 2
-        } else {
-            fn_arg_keys.len()
-        };
-
-        // First, argument length check.
-        if !has_var_arg && (args.len() != n_positional_args) {
-            return Err(Error::s(format!(
-                "Expected {} arguments passed to fn*, found {}",
-                n_positional_args,
-                args.len(),
-            )));
-        } else if has_var_arg && (args.len() < n_positional_args) {
-            return Err(Error::s(format!(
-                "Expected at least {} arguments passed to fn*, found {}",
-                n_positional_args,
-                args.len(),
-            )));
-        }
-
-        // Then, create a new `Env` with the closed-over `env` as the parent:
-        let fn_env = env_new(Some(env.clone()));
-
-        // We loop through the non-var_args first:
-        // Bind each non-var_arg argument in `args` to each key in `fn_arg_keys`,
-        // in succession:
-        for i in 0..n_positional_args {
-            env_set(&fn_env, fn_arg_keys[i].clone(), args[i].clone());
-        }
-
-        // If this function has a final var_arg:
-        if has_var_arg {
-            // ...then bind all the rest of the args to it in a Expr::List.
-            env_set(
-                &fn_env,
-                fn_arg_keys.last().unwrap().clone(),
-                Expr::List(args[n_positional_args..].to_vec()),
-            );
-        }
-
-        // Return the result of evaluating the function body in the fn_env.
-        eval(fn_body.clone(), fn_env)
-    }))
+    Expr::fn_star(exprs, env, eval)
 }
 
 /// print

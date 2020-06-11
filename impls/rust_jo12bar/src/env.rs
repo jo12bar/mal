@@ -1,6 +1,6 @@
 //! Contains structs and methods and types for working with MAL environments.
 
-use crate::types::{Expr, HashMapKey};
+use crate::types::{Error, Expr, HashMapKey};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -53,6 +53,66 @@ pub fn env_from_iter<T: IntoIterator<Item = (HashMapKey, Expr)>>(
         data: Arc::new(RwLock::new(HashMap::from_iter(iter))),
         outer,
     })
+}
+
+/// Creates a new Env.
+/// Binds a list of HashMapKey's to corresponding Expr's.
+/// Meant to be used for things like binding function arguments during the apply
+/// stage.
+///
+/// `is_variadic` should only be true if the second-to-last param is the symbol
+/// `&`. This makes it so that the final symbol in the list will be a `List(..)`
+/// of all the `args` that don't match up with named params. Useful for variadic
+/// functions.
+pub fn env_bind(
+    params: Vec<HashMapKey>,
+    args: Vec<Expr>,
+    is_variadic: bool,
+    outer: Option<Env>,
+) -> Result<Env, Box<dyn std::error::Error>> {
+    let n_positional_args = if is_variadic {
+        params.len() - 2
+    } else {
+        params.len()
+    };
+
+    // First, argument length check.
+    if !is_variadic && (args.len() != n_positional_args) {
+        return Err(Error::s(format!(
+            "env_bind: Expected {} arguments to be bound to parameters, found {}",
+            n_positional_args,
+            args.len(),
+        )));
+    } else if is_variadic && (args.len() < n_positional_args) {
+        return Err(Error::s(format!(
+            "env_bind: Expected at least {} arguments to be bound to parameters, found {}",
+            n_positional_args,
+            args.len(),
+        )));
+    }
+
+    // Then, create a new `Env` with `outer` as the parent:
+    let env = env_new(outer);
+
+    // We loop through the non-var_args first:
+    // Bind each non-var_arg argument in `args` to each key in `params`,
+    // in succession:
+    for i in 0..n_positional_args {
+        env_set(&env, params[i].clone(), args[i].clone());
+    }
+
+    // If this param list has a final var_arg:
+    if is_variadic {
+        // ...then bind all the rest of the args to it in a Expr::List.
+        env_set(
+            &env,
+            params.last().unwrap().clone(),
+            Expr::List(args[n_positional_args..].to_vec()),
+        );
+    }
+
+    // Return the new Env:
+    Ok(env)
 }
 
 /// Sets a key in the underlying `data` hash-map to some `Expr`. The reference

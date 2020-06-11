@@ -1,5 +1,12 @@
 use super::{Atom, Error, ExprResult, HashMapKey};
-use std::{cmp::PartialEq, collections::HashMap, convert::From, fmt, sync::Arc};
+use crate::env::{env_bind, Env};
+use std::{
+    cmp::PartialEq,
+    collections::HashMap,
+    convert::{From, TryFrom},
+    fmt,
+    sync::Arc,
+};
 
 /// An expression. Could just be a single `Atom`, or it could be something like
 /// a list or a function invocation.
@@ -80,6 +87,122 @@ impl Expr {
     /// Creates a new `Atom::Func` wrapped in a `Expr::Constant`.
     pub fn func(f: impl Fn(Vec<Expr>) -> ExprResult + Send + Sync + 'static) -> Self {
         Self::Constant(Atom::Func(Arc::new(f)))
+    }
+
+    /// Creates a new `Atom::FnStar` wrapped in a `Expr::Constant`.
+    pub fn fn_star(
+        exprs: Vec<Self>,
+        env: Env,
+        eval: impl Fn(Self, Env) -> ExprResult + Send + Sync + 'static,
+    ) -> ExprResult {
+        use HashMapKey as HMK;
+
+        // There should be two expressions after a "fn*": the arguments list and the
+        // function body.
+        if exprs.len() != 3 {
+            return Err(Error::s(format!(
+                "fn*: Expected 2 expressions after a \'fn*\': the arguments list and the function body.\n\
+                 Found {}",
+                exprs.len() - 1,
+            )));
+        }
+
+        // Double check that `exprs` starts with the symbol `fn*`:
+        if !matches!(&exprs[0], Self::Constant(Atom::Sym(s)) if s == "fn*") {
+            return Err(Error::s(
+                "fn*: Expected a fn* definition to start with the symbol fn*.".to_string(),
+            ));
+        }
+
+        let fn_argument_list = &exprs[1];
+        let fn_body = exprs[2].clone();
+
+        // fn_argument_list should literally be a `Expr::List` of symbols.
+        let fn_argument_vec = match fn_argument_list {
+            Expr::Vec(exprs) | Expr::List(exprs) => exprs,
+
+            _ => {
+                return Err(Error::s(format!(
+                    "fn*: Expected a list of symbols as an argument list after a \'fn*\'.\n\
+                     Found {}",
+                    fn_argument_list,
+                )));
+            }
+        };
+
+        let fn_arg_names = fn_argument_vec
+            .iter()
+            // Each expression should be a Expr::Constant(Atom::Sym):
+            .map(|expr| match expr {
+                Expr::Constant(sym @ Atom::Sym(..)) => Ok(sym),
+                _ => Err(format!(
+                    "fn*: Expected a symbol in a fn* argument list, found {}",
+                    expr
+                )),
+            });
+
+        // If there were any non-symbols in the argument list, error out.
+        if fn_arg_names.clone().any(|name| name.is_err()) {
+            return Err(Error::s(
+                fn_arg_names
+                    .filter_map(|name| name.err())
+                    .collect::<Vec<String>>()
+                    .join("\n"),
+            ));
+        }
+
+        // If there is a `&` symbol, then:
+        // - There should only be one symbol after it
+        // - That one symbol will be bound to all the rest of the arguments passed
+        //   to the function that don't match up with preceding symbols.
+        let has_var_arg = fn_arg_names
+            .clone()
+            .filter_map(|name| name.ok())
+            .any(|name| name == &Atom::Sym("&".to_string()));
+
+        // Pre-convert argument names to `HashMapKey`'s.
+        let fn_arg_keys: Vec<HMK> = fn_arg_names
+            .filter_map(|name| name.ok())
+            .map(|sym| HMK::try_from(sym.clone()).unwrap())
+            .collect();
+
+        if has_var_arg {
+            // There must only be one item after the '&':
+            let ampersand_index = fn_arg_keys
+                .iter()
+                .position(|r| r == &HMK::Sym("&".to_string()))
+                .unwrap();
+
+            if fn_arg_keys[fn_arg_keys.len() - 2] != fn_arg_keys[ampersand_index] {
+                return Err(Error::s(format!(
+                    "fn*: Expected one symbol after the & in a fn* argument list, found {}",
+                    fn_arg_keys[(ampersand_index)..].len() - 1
+                )));
+            }
+        }
+
+        // Get some copies of values that will be moved into a closure for later
+        // use:
+        let fn_body_2 = fn_body.clone();
+        let fn_arg_keys_2 = fn_arg_keys.clone();
+        let env_2 = env.clone();
+
+        // At this point, all preliminary validation has passed. So, create a closure:
+        let f = Arc::new(move |args: Vec<Expr>| {
+            let fn_env = env_bind(fn_arg_keys.clone(), args, has_var_arg, Some(env.clone()))?;
+
+            // Return the result of evaluating the function body in the fn_env.
+            eval(fn_body.clone(), fn_env)
+        });
+
+        // Return the final FnStar!
+        Ok(Expr::Constant(Atom::FnStar {
+            body: Arc::new(fn_body_2),
+            params: fn_arg_keys_2,
+            env: env_2,
+            is_variadic: has_var_arg,
+            f,
+        }))
     }
 
     /// Apply arguments to a function. Will return an `Error` if you attempt to

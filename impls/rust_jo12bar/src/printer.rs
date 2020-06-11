@@ -51,7 +51,8 @@ impl Expr {
             | C(atom @ A::Float(..))
             | C(atom @ A::Sym(..))
             | C(atom @ A::Keyword(..))
-            | C(atom @ A::Func(..)) => format!("{}", atom),
+            | C(atom @ A::Func(..))
+            | C(atom @ A::FnStar { .. }) => format!("{}", atom),
 
             // Do funky string stuff:
             C(A::Str(s)) => {
