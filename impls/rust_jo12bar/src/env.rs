@@ -9,11 +9,11 @@ use std::sync::{Arc, RwLock};
 ///
 /// This is just the underlying struct. You should usually call `env_new()` to
 /// get an `Env`, not a `EnvStruct`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EnvStruct {
     /// A `HashMap` from `HashMapKey`s (usually `HashMapKey::Sym`s) to `Expr`s.
     /// Holds the data present in the MAL environment.
-    data: Arc<RwLock<HashMap<HashMapKey, Expr>>>,
+    data: RwLock<HashMap<HashMapKey, Expr>>,
 
     /// The `Env` that this `Env` exists within. Set to `None` if this is a
     /// top-level `Env`.
@@ -27,7 +27,7 @@ pub type Env = Arc<EnvStruct>;
 /// Create a new, empty MAL environment.
 pub fn env_new(outer: Option<Env>) -> Env {
     Arc::new(EnvStruct {
-        data: Arc::new(RwLock::new(HashMap::default())),
+        data: RwLock::new(HashMap::default()),
         outer,
     })
 }
@@ -37,7 +37,7 @@ pub fn env_new(outer: Option<Env>) -> Env {
 /// beginning how many items you need in the environment.
 pub fn env_with_capacity(capacity: usize, outer: Option<Env>) -> Env {
     Arc::new(EnvStruct {
-        data: Arc::new(RwLock::new(HashMap::with_capacity(capacity))),
+        data: RwLock::new(HashMap::with_capacity(capacity)),
         outer,
     })
 }
@@ -50,7 +50,7 @@ pub fn env_from_iter<T: IntoIterator<Item = (HashMapKey, Expr)>>(
     use std::iter::FromIterator;
 
     Arc::new(EnvStruct {
-        data: Arc::new(RwLock::new(HashMap::from_iter(iter))),
+        data: RwLock::new(HashMap::from_iter(iter)),
         outer,
     })
 }
