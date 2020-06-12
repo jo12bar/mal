@@ -1,0 +1,273 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Lib: Tests: mal_rust_jo12bar",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "mal_rust_jo12bar",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step0_repl",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step0_repl",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step0_repl",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step0_repl",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step0_repl",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step0_repl",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step1_read_print",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step1_read_print",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step1_read_print",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step1_read_print",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step1_read_print",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step1_read_print",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step2_eval",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step2_eval",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step2_eval",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step2_eval",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step2_eval",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step2_eval",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step3_env",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step3_env",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step3_env",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step3_env",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step3_env",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step3_env",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step4_if_fn_do",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step4_if_fn_do",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step4_if_fn_do",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step4_if_fn_do",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step4_if_fn_do",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step4_if_fn_do",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step5_tco",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step5_tco",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step5_tco",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step5_tco",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step5_tco",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step5_tco",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
