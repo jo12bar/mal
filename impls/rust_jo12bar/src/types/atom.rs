@@ -1,6 +1,10 @@
 use super::{Expr, ExprResult, HashMapKey};
-use crate::env::Env;
-use std::{convert::From, fmt, sync::Arc};
+use crate::env::{Env, EnvStruct};
+use std::{
+    convert::From,
+    fmt,
+    sync::{Arc, Weak},
+};
 
 /// Primitive values.
 #[derive(Clone)]
@@ -32,13 +36,14 @@ pub enum Atom {
         params: Vec<HashMapKey>,
 
         /// > `env`: The current value of the `env` parameter of `EVAL`.
-        env: Env,
+        env: Weak<EnvStruct>,
 
         /// Whether or not the `fn*` is variadic.
         is_variadic: bool,
 
-        /// The function itself.
-        f: Arc<dyn Fn(Vec<Expr>) -> ExprResult + Send + Sync>,
+        /// The function to evaluate the function body with.
+        /// The first parameter will be `body`, and the second will be `env`.
+        eval: Arc<dyn Fn(Expr, Env) -> ExprResult + Send + Sync>,
     },
 }
 
@@ -107,7 +112,7 @@ impl fmt::Debug for Atom {
             Self::FnStar {
                 body,
                 params,
-                f: func,
+                eval,
                 env,
                 is_variadic,
             } => f
@@ -115,12 +120,12 @@ impl fmt::Debug for Atom {
                 .field("body", body)
                 .field("params", params)
                 .field("is_variadic", is_variadic)
-                .field("env", &format!("Env at {:p}", *env))
+                .field("env", env)
                 .field(
-                    "f",
+                    "eval",
                     &format!(
-                        "Arc<dyn Fn(Vec<Expr>) -> ExprResult + Send + Sync> at {:p}",
-                        *func
+                        "Arc<dyn Fn(Expr, Env) -> ExprResult + Send + Sync> at {:p}",
+                        *eval
                     ),
                 )
                 .finish(),

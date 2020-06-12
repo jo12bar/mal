@@ -2,7 +2,7 @@
 
 use crate::types::{Error, Expr, HashMapKey};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
 /// A Lisp (or MAL) environment. Contains a `HashMap<HashMapKey, Expr>` for
 /// mapping things to values, and a way to get to the parent `Env`.
@@ -17,7 +17,7 @@ pub struct EnvStruct {
 
     /// The `Env` that this `Env` exists within. Set to `None` if this is a
     /// top-level `Env`.
-    pub outer: Option<Env>,
+    pub outer: Option<Weak<EnvStruct>>,
 }
 
 /// A MAL environment. Basically just a `EnvStruct` wrapped in a `Rc`.
@@ -28,7 +28,7 @@ pub type Env = Arc<EnvStruct>;
 pub fn env_new(outer: Option<Env>) -> Env {
     Arc::new(EnvStruct {
         data: RwLock::new(HashMap::default()),
-        outer,
+        outer: outer.map(|e| Arc::downgrade(&e)),
     })
 }
 
@@ -38,7 +38,7 @@ pub fn env_new(outer: Option<Env>) -> Env {
 pub fn env_with_capacity(capacity: usize, outer: Option<Env>) -> Env {
     Arc::new(EnvStruct {
         data: RwLock::new(HashMap::with_capacity(capacity)),
-        outer,
+        outer: outer.map(|e| Arc::downgrade(&e)),
     })
 }
 
@@ -51,7 +51,7 @@ pub fn env_from_iter<T: IntoIterator<Item = (HashMapKey, Expr)>>(
 
     Arc::new(EnvStruct {
         data: RwLock::new(HashMap::from_iter(iter)),
-        outer,
+        outer: outer.map(|e| Arc::downgrade(&e)),
     })
 }
 
@@ -132,8 +132,8 @@ pub fn env_set(env: &Env, k: HashMapKey, v: Expr) -> &Env {
 pub fn env_get(env: &Env, k: &HashMapKey) -> Option<Expr> {
     if let Some(expr) = env.data.read().unwrap().get(k) {
         Some(expr.clone())
-    } else if let Some(outer_env) = env.outer.clone() {
-        env_get(&outer_env, k)
+    } else if let Some(outer_env) = &env.outer {
+        env_get(&outer_env.upgrade().unwrap(), k)
     } else {
         None
     }
@@ -144,8 +144,8 @@ pub fn env_get(env: &Env, k: &HashMapKey) -> Option<Expr> {
 pub fn env_find(env: &Env, k: &HashMapKey) -> Option<Env> {
     if env.data.read().unwrap().contains_key(k) {
         Some(env.clone())
-    } else if let Some(outer_env) = env.outer.clone() {
-        env_find(&outer_env, k)
+    } else if let Some(outer_env) = &env.outer {
+        env_find(&outer_env.upgrade().unwrap(), k)
     } else {
         None
     }

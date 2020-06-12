@@ -1,5 +1,5 @@
 use super::{Atom, Error, ExprResult, HashMapKey};
-use crate::env::{env_bind, Env};
+use crate::env::Env;
 use std::{
     cmp::PartialEq,
     collections::HashMap,
@@ -180,28 +180,13 @@ impl Expr {
                 )));
             }
         }
-
-        // Get some copies of values that will be moved into a closure for later
-        // use:
-        let fn_body_2 = fn_body.clone();
-        let fn_arg_keys_2 = fn_arg_keys.clone();
-        let env_2 = env.clone();
-
-        // At this point, all preliminary validation has passed. So, create a closure:
-        let f = Arc::new(move |args: Vec<Expr>| {
-            let fn_env = env_bind(fn_arg_keys.clone(), args, has_var_arg, Some(env.clone()))?;
-
-            // Return the result of evaluating the function body in the fn_env.
-            eval(fn_body.clone(), fn_env)
-        });
-
         // Return the final FnStar!
         Ok(Expr::Constant(Atom::FnStar {
-            body: Arc::new(fn_body_2),
-            params: fn_arg_keys_2,
-            env: env_2,
+            body: Arc::new(fn_body),
+            params: fn_arg_keys,
+            env: Arc::downgrade(&env),
             is_variadic: has_var_arg,
-            f,
+            eval: Arc::new(eval),
         }))
     }
 

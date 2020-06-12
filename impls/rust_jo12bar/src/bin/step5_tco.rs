@@ -146,7 +146,12 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
                                             params.clone(),
                                             args,
                                             *is_variadic,
-                                            Some(fenv.clone()),
+                                            // IMPORTANT NOTE: If the below line panics, then
+                                            // try reverting the commit tagged
+                                            // "rust_jo12bar/step5/POSSIBLY_BROKEN_MEMORY_LEAK_FIX"
+                                            // cause that means ya screwed up the memory leak fix
+                                            // Johann.
+                                            Some(fenv.upgrade().unwrap()),
                                         )?;
                                         ast = body.clone();
                                     }
@@ -359,6 +364,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    dbg!(builtin_env);
 
     Ok(())
 }
