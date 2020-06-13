@@ -365,7 +365,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    dbg!(builtin_env);
-
     Ok(())
 }
