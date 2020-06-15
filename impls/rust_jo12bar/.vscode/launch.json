@@ -268,6 +268,47 @@
       },
       "args": [],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step6_file",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step6_file",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step6_file",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step6_file",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step6_file",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step6_file",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

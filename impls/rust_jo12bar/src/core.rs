@@ -1,7 +1,29 @@
 //! Contains core MAL functions to be used by an interpreter, REPL, etc...
 
-use crate::types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK};
+use crate::{
+    reader,
+    types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
+};
 use lazy_static::lazy_static;
+use std::{fs::File, io::prelude::*, path::Path};
+
+/// Allows you to check that a function call receives some fixed number of
+/// arguments. Returns an error if it doesn't.
+#[macro_export]
+macro_rules! mal_arg_length_check {
+    ($fn_name:expr, $num_args:expr, $args:expr $(,)?) => {{
+        use $crate::types::Error;
+
+        if $args.len() != $num_args {
+            return Err(Error::s(format!(
+                "{}: Expected {} arguments, found {}",
+                $fn_name,
+                $num_args,
+                $args.len(),
+            )));
+        }
+    }};
+}
 
 /// This generates a function that tells you if a `Expr` is a certain type.
 /// You give it a pattern to match, and the closure will return true if the `Expr`
@@ -223,6 +245,63 @@ fn println_fn(args: Vec<Expr>) -> ExprResult {
     Ok(Expr::Constant(Atom::Nil))
 }
 
+/// Just exposes the `reader::read_str` function.
+fn read_string(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("read-str", 1, args);
+
+    match &args[0] {
+        Expr::Constant(Atom::Str(s)) => reader::read_str(s),
+
+        e => {
+            return Err(Error::s(format!(
+                "read-str: Expected string paramter, found {}",
+                e
+            )))
+        }
+    }
+}
+
+/// Takes a file name (string) and returns the contents of the file as a string.
+fn slurp(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("slurp", 1, args);
+
+    if let Expr::Constant(Atom::Str(s)) = &args[0] {
+        let path = Path::new(s);
+        let display = path.display();
+
+        // Open file:
+        let mut file = match File::open(&path) {
+            Ok(file) => file,
+            Err(why) => {
+                return Err(Error::s(format!(
+                    "slurp: Could not open {}: {}",
+                    display, why,
+                )));
+            }
+        };
+
+        // Read into String buffer:
+        let mut buf = String::new();
+        match file.read_to_string(&mut buf) {
+            Ok(_) => {}
+            Err(why) => {
+                return Err(Error::s(format!(
+                    "slurp: Could not read {}: {}",
+                    display, why
+                )))
+            }
+        }
+
+        // Return it!
+        Ok(Expr::Constant(Atom::Str(buf)))
+    } else {
+        return Err(Error::s(format!(
+            "read-str: Expected string parameter, found {}",
+            &args[0],
+        )));
+    }
+}
+
 /// Just a convenience function for making a `HashMapKey::Sym(String)`.
 macro_rules! hkm {
     ($string:expr) => {
@@ -230,55 +309,94 @@ macro_rules! hkm {
     };
 }
 
-lazy_static! {
-    /// The core MAL namespace. Includes all the symbols and their bindings that
-    /// should be added to the root `Env` (i.e. via `env_from_iterator(..)`).
-    pub static ref NS: Vec<(HMK, Expr)> = vec![
+/// The core MAL namespace. Includes all the symbols and their bindings that
+/// should be added to the root `Env` (i.e. via `env_from_iterator(..)`).
+///
+/// If you're only loading this namespace once, then this function should be
+/// preferred over the lazy static `NS` that also exists in this module.
+pub fn get_ns() -> Vec<(HMK, Expr)> {
+    vec![
         // Binary numerical operators:
         (hkm!("+"), Expr::func(mal_bin_num_op!(|a, b| a + b))),
         (hkm!("-"), Expr::func(mal_bin_num_op!(|a, b| a - b))),
         (hkm!("*"), Expr::func(mal_bin_num_op!(|a, b| a * b))),
         (hkm!("/"), Expr::func(mal_bin_num_op!(|a, b| a / b))),
-
         // Type-checking functions:
-        (hkm!("num?"), Expr::func(mal_expr_is_type!(
-            Expr::Constant(Atom::Int(..)),
-            Expr::Constant(Atom::Float(..)),
-        ))),
-        (hkm!("int?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Int(..))))),
-        (hkm!("float?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Float(..))))),
-        (hkm!("nil?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Nil)))),
-        (hkm!("symbol?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Sym(..))))),
-        (hkm!("keyword?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Keyword(..))))),
-        (hkm!("str?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Str(..))))),
-        (hkm!("fn?"), Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Func(..))))),
-        (hkm!("constant?"), Expr::func(mal_expr_is_type!(Expr::Constant(..)))),
+        (
+            hkm!("num?"),
+            Expr::func(mal_expr_is_type!(
+                Expr::Constant(Atom::Int(..)),
+                Expr::Constant(Atom::Float(..)),
+            )),
+        ),
+        (
+            hkm!("int?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Int(..)))),
+        ),
+        (
+            hkm!("float?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Float(..)))),
+        ),
+        (
+            hkm!("nil?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Nil))),
+        ),
+        (
+            hkm!("symbol?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Sym(..)))),
+        ),
+        (
+            hkm!("keyword?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Keyword(..)))),
+        ),
+        (
+            hkm!("str?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Str(..)))),
+        ),
+        (
+            hkm!("fn?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Func(..)))),
+        ),
+        (
+            hkm!("constant?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(..))),
+        ),
         (hkm!("list?"), Expr::func(mal_expr_is_type!(Expr::List(..)))),
         (hkm!("vec?"), Expr::func(mal_expr_is_type!(Expr::Vec(..)))),
-        (hkm!("hash?"), Expr::func(mal_expr_is_type!(Expr::HashMap(..)))),
-
+        (
+            hkm!("hash?"),
+            Expr::func(mal_expr_is_type!(Expr::HashMap(..))),
+        ),
         // Printing functions:
         (hkm!("pr-str"), Expr::func(pr_str)),
         (hkm!("str"), Expr::func(str_fn)),
         (hkm!("prn"), Expr::func(prn)),
         (hkm!("println"), Expr::func(println_fn)),
-
         // List functions:
         (hkm!("list"), Expr::func(|args| Ok(Expr::List(args)))),
-
         // Collection functions (i.e. lists, vecs, and hashmaps)
-        (hkm!("empty?"), Expr::func(|args| {
-            args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).is_empty()
-        })),
-        (hkm!("count"), Expr::func(|args| {
-            args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).count()
-        })),
-
+        (
+            hkm!("empty?"),
+            Expr::func(|args| args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).is_empty()),
+        ),
+        (
+            hkm!("count"),
+            Expr::func(|args| args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).count()),
+        ),
         // Comparison functions:
         mal_bin_op!("=", |a, b| Ok(Expr::Constant(Atom::Bool(a == b)))),
         mal_bin_num_op!("<", |a, b| Ok(Expr::Constant(Atom::Bool(a < b)))),
         mal_bin_num_op!(">", |a, b| Ok(Expr::Constant(Atom::Bool(a > b)))),
         mal_bin_num_op!("<=", |a, b| Ok(Expr::Constant(Atom::Bool(a <= b)))),
         mal_bin_num_op!(">=", |a, b| Ok(Expr::Constant(Atom::Bool(a >= b)))),
-    ];
+        // Evalutation-related functions:
+        (hkm!("read-string"), Expr::func(read_string)),
+        (hkm!("slurp"), Expr::func(slurp)),
+    ]
+}
+
+lazy_static! {
+    /// The core MAL namespace. Includes all the symbols and their bindings that
+    /// should be added to the root `Env` (i.e. via `env_from_iterator(..)`).
+    pub static ref NS: Vec<(HMK, Expr)> = get_ns();
 }

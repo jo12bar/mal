@@ -1,21 +1,25 @@
 use mal_rust_jo12bar::{
-    core::NS,
-    env::{env_from_iter, env_get, env_new, env_set, Env},
+    core,
+    env::Env,
     reader::read_line,
     readline::Readline,
     types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
 };
-use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::{
+    collections::HashMap,
+    convert::TryFrom,
+    iter::FromIterator,
+    sync::{Arc, Weak},
+};
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: Expr, env: Env) -> ExprResult {
+fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
     match ast.clone() {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
             // If not found, raise an error.
-            if let Some(func) = env_get(&env, &HMK::Sym(sym.clone())) {
-                Ok(func)
+            if let Some(func) = env.get(&HMK::Sym(sym.clone())) {
+                Ok(func.as_ref().clone())
             } else {
                 Err(Error::s(format!("Symbol \'{}\' not found", sym)))
             }
@@ -65,7 +69,7 @@ fn eval_ast(ast: Expr, env: Env) -> ExprResult {
 }
 
 /// Evaluates an expression.
-fn eval(ast: Expr, env: Env) -> ExprResult {
+fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
     match ast.clone() {
         // If `ast` is a list, then we evaluate it.
         Expr::List(exprs) => {
@@ -135,7 +139,7 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
 }
 
 /// Defines a new symbol in the current environment.
-fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> ExprResult {
+fn eval_def_bang(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
     if exprs.len() != 3 {
         return Err(Error::s(format!(
             "Wrong number of expressions after a \'def!\'.\n\
@@ -147,10 +151,9 @@ fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> ExprResult {
     match &exprs[1] {
         Expr::Constant(sym @ Atom::Sym(..)) => {
             let evaluated_expr_2 = eval(exprs[2].clone(), env.clone())?;
-            env_set(
-                &env,
+            env.insert(
                 HMK::try_from(sym.clone()).unwrap(),
-                evaluated_expr_2.clone(),
+                Arc::new(evaluated_expr_2.clone()),
             );
             Ok(evaluated_expr_2)
         }
@@ -164,7 +167,7 @@ fn eval_def_bang(exprs: Vec<Expr>, env: Env) -> ExprResult {
 
 /// Defines a bunch of symbols in a new child `Env`, and then evaluates a
 /// parameter within the child `Env`.
-fn eval_let_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
+fn eval_let_star(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
     if exprs.len() != 3 {
         return Err(Error::s(format!(
             "Wrong number of expressions after a \'let*\'.\nExpected 2 expressions, found {}.",
@@ -186,7 +189,8 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
         }
 
         Expr::List(expr1_vec) | Expr::Vec(expr1_vec) if expr1_vec.len() % 2 == 0 => {
-            let let_env = env_new(Some(env));
+            let let_env = Arc::new(Env::new());
+            Env::add_child(&env, &let_env);
 
             // Iterate over the bindings list in pairs.
             for (k, v) in expr1_vec.chunks_exact(2).map(|s| (&s[0], &s[1])) {
@@ -196,7 +200,7 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
                 match k {
                     // Set a new key in the let_env to the evaluated value.
                     Expr::Constant(sym @ Atom::Sym(..)) => {
-                        env_set(&let_env, HMK::try_from(sym.clone()).unwrap(), evaluated_v);
+                        let_env.insert(HMK::try_from(sym.clone()).unwrap(), Arc::new(evaluated_v));
                     }
 
                     _ => {
@@ -222,7 +226,7 @@ fn eval_let_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
 }
 
 /// Evaluates all the parameters, and returns the value of the last one.
-fn eval_do(exprs: Vec<Expr>, env: Env) -> ExprResult {
+fn eval_do(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
     match eval_ast(Expr::List(exprs[1..].to_vec()), env)? {
         Expr::List(evaluated_exprs) => Ok(evaluated_exprs
             .last()
@@ -234,7 +238,7 @@ fn eval_do(exprs: Vec<Expr>, env: Env) -> ExprResult {
 }
 
 /// An if-else statement.
-fn eval_if(exprs: Vec<Expr>, env: Env) -> ExprResult {
+fn eval_if(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
     // The length should be *at least* 3, for the symbol "if", the conditional,
     // and the "true" branch.
     if exprs.len() < 3 {
@@ -273,7 +277,7 @@ fn eval_if(exprs: Vec<Expr>, env: Env) -> ExprResult {
 }
 
 /// A function closure (often called a lamba function in lisps.)
-fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
+fn eval_fn_star(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
     // There should be two expressions after a "fn*": the arguments list and the
     // function body.
     if exprs.len() != 3 {
@@ -351,6 +355,17 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
         }
     }
 
+    // Here, we create a child env for the `env` that was passed in. The `env`
+    // passed in will keep alive at least one Arc to the child env, so we can
+    // then safely downgrade the child to a Weak<Env>.
+    //
+    // This is required because Expr::func requires a closure with a lifetime of
+    // 'static. If we simply closed over the passed-in `env`, then it could
+    // result in a Arc<Env> that never gets dropped, leading to a memory leak.
+    let child_env = Arc::new(Env::new());
+    Env::add_child(&env, &child_env);
+    let child_env = Arc::downgrade(&child_env);
+
     // At this point, all preliminary validation has passed. So, return a closure:
     Ok(Expr::func(move |args| {
         let n_positional_args = if has_var_arg {
@@ -374,23 +389,27 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Env) -> ExprResult {
             )));
         }
 
-        // Then, create a new `Env` with the closed-over `env` as the parent:
-        let fn_env = env_new(Some(env.clone()));
+        // Then, create a new `Env` with the closed-over `child_env` as the parent:
+        let fn_env = Arc::new(Env::with_capacity(if has_var_arg {
+            n_positional_args + 1
+        } else {
+            n_positional_args
+        }));
+        Env::add_child(&Weak::upgrade(&child_env).unwrap(), &fn_env);
 
         // We loop through the non-var_args first:
         // Bind each non-var_arg argument in `args` to each key in `fn_arg_keys`,
         // in succession:
         for i in 0..n_positional_args {
-            env_set(&fn_env, fn_arg_keys[i].clone(), args[i].clone());
+            fn_env.insert(fn_arg_keys[i].clone(), Arc::new(args[i].clone()));
         }
 
         // If this function has a final var_arg:
         if has_var_arg {
             // ...then bind all the rest of the args to it in a Expr::List.
-            env_set(
-                &fn_env,
+            fn_env.insert(
                 fn_arg_keys.last().unwrap().clone(),
-                Expr::List(args[n_positional_args..].to_vec()),
+                Arc::new(Expr::List(args[n_positional_args..].to_vec())),
             );
         }
 
@@ -405,7 +424,7 @@ fn print(ast: Expr) -> String {
 }
 
 /// The main REPL.
-fn rep(line: impl ToString, env: Env) -> Result<String, Box<dyn std::error::Error>> {
+fn rep(line: impl ToString, env: Arc<Env>) -> Result<String, Box<dyn std::error::Error>> {
     match read_line(&line.to_string()) {
         Ok(ast) => Ok(print(eval(ast, env)?)),
         Err(err_string) => Err(Error::s(err_string)),
@@ -414,7 +433,7 @@ fn rep(line: impl ToString, env: Env) -> Result<String, Box<dyn std::error::Erro
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ==> core.rs: Namespace defined by Rust.
-    let builtin_env = env_from_iter(NS.clone(), None);
+    let builtin_env = Arc::new(Env::from_iter(core::get_ns()));
 
     // ==> core.mal: Namespace defined by MAL.
     // Define the `not` function:

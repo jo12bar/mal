@@ -1,16 +1,13 @@
 //! Methods for reading lines from the user.
 
-use lazy_static::lazy_static;
 use linefeed::{DefaultTerminal, Interface, ReadResult};
 use std::path::PathBuf;
 
-lazy_static! {
-    /// The name of the history file to use.
-    pub static ref HISTORY_FILE: PathBuf = {
-        let mut path = dirs::data_local_dir().unwrap();
-        path.push(".mal_history");
-        path
-    };
+/// Gets the name of the history file to use.
+fn get_history_file() -> PathBuf {
+    let mut path = dirs::data_local_dir().unwrap();
+    path.push(".mal_history");
+    path
 }
 
 /// A utility struct for reading a line from the user.
@@ -23,7 +20,9 @@ impl Readline {
     pub fn new(prompt: &str) -> Self {
         let reader = Interface::new("mal").unwrap();
         reader.set_prompt(prompt).unwrap();
-        reader.load_history(HISTORY_FILE.as_path()).unwrap_or(());
+        reader
+            .load_history(get_history_file().as_path())
+            .unwrap_or(());
 
         Self { reader }
     }
@@ -36,7 +35,7 @@ impl Readline {
     /// Save the history to `readline::HISTORY_FILE`.
     pub fn save_history(&self) {
         self.reader
-            .save_history(HISTORY_FILE.as_path())
+            .save_history(get_history_file().as_path())
             .unwrap_or(());
     }
 

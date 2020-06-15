@@ -1,5 +1,5 @@
 use mal_rust_jo12bar::{
-    env::{env_from_iter, env_get, env_new, env_set, Env},
+    env::Env,
     printer::pr_str,
     reader::read_line,
     readline::Readline,
@@ -7,6 +7,8 @@ use mal_rust_jo12bar::{
 };
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::iter::FromIterator;
+use std::sync::Arc;
 
 /// This represents a two-argument `Expr::Constant(Atom::Int)` **OR**
 /// `Expr::Constant(Atom::Float)` operation.
@@ -42,13 +44,13 @@ fn binary_num_op(
 }
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: Expr, env: Env) -> ExprResult {
+fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
     match ast.clone() {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
             // If not found, raise an error.
-            if let Some(func) = env_get(&env, &HMK::Sym(sym.clone())) {
-                Ok(func)
+            if let Some(func) = env.get(&HMK::Sym(sym.clone())) {
+                Ok(func.as_ref().clone())
             } else {
                 Err(Error::s(format!("Symbol \'{}\' not found", sym)))
             }
@@ -98,7 +100,7 @@ fn eval_ast(ast: Expr, env: Env) -> ExprResult {
 }
 
 /// Evaluates an expression.
-fn eval(ast: Expr, env: Env) -> ExprResult {
+fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
     match ast.clone() {
         // If `ast` is a list, then we evaluate it.
         Expr::List(exprs) => {
@@ -125,10 +127,9 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
                         match expr1 {
                             Expr::Constant(sym @ Atom::Sym(..)) => {
                                 let evaluated_expr_2 = eval(exprs[2].clone(), env.clone())?;
-                                env_set(
-                                    &env,
+                                env.insert(
                                     HMK::try_from(sym.clone()).unwrap(),
-                                    evaluated_expr_2.clone(),
+                                    Arc::new(evaluated_expr_2.clone()),
                                 );
                                 Ok(evaluated_expr_2)
                             }
@@ -167,7 +168,8 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
                             ))),
 
                             Expr::List(expr1_vec) | Expr::Vec(expr1_vec) if expr1_vec.len() % 2 == 0 => {
-                                let let_env = env_new(Some(env));
+                                let let_env = Arc::new(Env::new());
+                                Env::add_child(&env, &let_env);
 
                                 // Iterate over the bindings list in pairs.
                                 for (k, v) in expr1_vec.chunks_exact(2).map(|s| (&s[0], &s[1])) {
@@ -177,7 +179,7 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
                                     match k {
                                         // Set a new key in the let_env to the evaluated value.
                                         Expr::Constant(sym @ Atom::Sym(..)) => {
-                                            env_set(&let_env, HMK::try_from(sym.clone()).unwrap(), evaluated_v);
+                                            let_env.insert(HMK::try_from(sym.clone()).unwrap(), Arc::new(evaluated_v));
                                         }
 
                                         _ => return Err(Error::s(format!(
@@ -224,7 +226,7 @@ fn eval(ast: Expr, env: Env) -> ExprResult {
 }
 
 /// The main REPL.
-fn rep(line: String, env: Env) -> ExprResult {
+fn rep(line: String, env: Arc<Env>) -> ExprResult {
     match read_line(&line) {
         Ok(ast) => eval(ast, env),
         Err(err_string) => Err(Error::s(err_string)),
@@ -232,27 +234,24 @@ fn rep(line: String, env: Env) -> ExprResult {
 }
 
 fn main() {
-    let builtin_env = env_from_iter(
-        vec![
-            (
-                HMK::Sym("+".to_string()),
-                Expr::func(|args| binary_num_op(|a, b| a + b, |a, b| a + b, args)),
-            ),
-            (
-                HMK::Sym("-".to_string()),
-                Expr::func(|args| binary_num_op(|a, b| a - b, |a, b| a - b, args)),
-            ),
-            (
-                HMK::Sym("*".to_string()),
-                Expr::func(|args| binary_num_op(|a, b| a * b, |a, b| a * b, args)),
-            ),
-            (
-                HMK::Sym("/".to_string()),
-                Expr::func(|args| binary_num_op(|a, b| a / b, |a, b| a / b, args)),
-            ),
-        ],
-        None,
-    );
+    let builtin_env = Arc::new(Env::from_iter(vec![
+        (
+            HMK::Sym("+".to_string()),
+            Expr::func(|args| binary_num_op(|a, b| a + b, |a, b| a + b, args)),
+        ),
+        (
+            HMK::Sym("-".to_string()),
+            Expr::func(|args| binary_num_op(|a, b| a - b, |a, b| a - b, args)),
+        ),
+        (
+            HMK::Sym("*".to_string()),
+            Expr::func(|args| binary_num_op(|a, b| a * b, |a, b| a * b, args)),
+        ),
+        (
+            HMK::Sym("/".to_string()),
+            Expr::func(|args| binary_num_op(|a, b| a / b, |a, b| a / b, args)),
+        ),
+    ]));
 
     let mut readline = Readline::new("mal> ");
 

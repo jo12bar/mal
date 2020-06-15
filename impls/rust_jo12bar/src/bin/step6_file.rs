@@ -1,11 +1,11 @@
 use mal_rust_jo12bar::{
     core,
     env::Env,
+    mal_arg_length_check,
     reader::read_line,
     readline::Readline,
     types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
 };
-
 use std::{
     collections::HashMap,
     convert::TryFrom,
@@ -87,105 +87,100 @@ fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
 
     loop {
         match ast.clone() {
-            // If `ast` is a list, then we evaluate it.
+            // If `ast` is an *empty* list, just return `ast` unchanged.
+            Expr::List(exprs) if exprs.is_empty() => return Ok(ast),
+
+            // If `ast` is a *non-empty* list, then we evaluate it.
             Expr::List(exprs) => {
-                // If the list is empty, just return `ast` unchanged.
-                if exprs.is_empty() {
-                    return Ok(ast);
-                } else {
-                    let expr0 = &exprs[0];
+                let expr0 = &exprs[0];
 
-                    match expr0 {
-                        // If the first expression in the list `expr0` is the symbol
-                        // "def!", then call the set method on the current
-                        // environment `env`.
-                        Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "def!" => {
-                            return eval_def_bang(exprs, env)
-                        }
-
-                        // If the first expression in the list, `expr01`, is the
-                        // symbol "let*", then create a new environment using the
-                        // current environment as the "outer" environment. The first
-                        // parameter is a list of new bindings in the "let*" env.
-                        // The second parameter is evaluated using the new "let*"
-                        // env.
-                        Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "let*" => {
-                            let env_ast = eval_let_star(exprs, env)?;
-                            ast = env_ast.0;
-                            env = env_ast.1;
-                        }
-
-                        // If the first symbol is the symbol "do", then evaluate
-                        // all elements of a list passed to the "do" and return the
-                        // final evaluated element.
-                        Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "do" => {
-                            ast = eval_do(exprs, env.clone())?;
-                        }
-
-                        // If the first symbol is "if", then evaluate the first
-                        // parameter. If it is anything other than `Nil` or `false`,
-                        // then evaluate and return the 2nd parameter. Otherwise,
-                        // evaluate and return the 3rd parameter. If there is no 3rd
-                        // parameter, just return `Nil`.
-                        Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "if" => {
-                            ast = eval_if(exprs, env.clone())?;
-                        }
-
-                        // If the first symbol is "fn*", then return a new function closure.
-                        Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "fn*" => {
-                            return eval_fn_star(exprs, env)
-                        }
-
-                        // Otherwise, call `eval_ast` to get a new evaluated list.
-                        // The first element in the list, `expr0`, is expected to be
-                        // some sort of MAL function.
-                        _ => match eval_ast(ast, env.clone())? {
-                            Expr::List(new_exprs) => {
-                                let func = &new_exprs[0];
-                                let args = new_exprs[1..].to_vec();
-                                match func {
-                                    // For simple functions:
-                                    Expr::Constant(Atom::Func(_)) => return func.apply(args),
-
-                                    // For functions that support tail call optimization:
-                                    Expr::Constant(Atom::FnStar {
-                                        body,
-                                        env: fenv,
-                                        params,
-                                        is_variadic,
-                                        ..
-                                    }) => {
-                                        let fenv = Weak::upgrade(fenv).expect(
-                                            "Error getting reference to fn* env in apply stage!",
-                                        );
-
-                                        // Bind the function's env, and set ast to the function body.
-                                        // The function will then be evaluated on the next loop.
-                                        let apply_env = Arc::new(Env::bind(
-                                            params.clone(),
-                                            args,
-                                            *is_variadic,
-                                        )?);
-
-                                        Env::add_child(&fenv, &apply_env);
-                                        arc_env_keeper.push(env.clone());
-
-                                        env = apply_env;
-                                        ast = body.as_ref().clone();
-                                    }
-
-                                    _ => return Err(Error::s("Attempt to call a non-function!")),
-                                }
-                            }
-
-                            other => {
-                                return Err(Error::s(format!(
-                                    "Expected a list when evaluating a list.\nGot {}",
-                                    other
-                                )))
-                            }
-                        },
+                match expr0 {
+                    // If the first expression in the list `expr0` is the symbol
+                    // "def!", then call the set method on the current
+                    // environment `env`.
+                    Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "def!" => {
+                        return eval_def_bang(exprs, env)
                     }
+
+                    // If the first expression in the list, `expr01`, is the
+                    // symbol "let*", then create a new environment using the
+                    // current environment as the "outer" environment. The first
+                    // parameter is a list of new bindings in the "let*" env.
+                    // The second parameter is evaluated using the new "let*"
+                    // env.
+                    Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "let*" => {
+                        let env_ast = eval_let_star(exprs, env)?;
+                        ast = env_ast.0;
+                        env = env_ast.1;
+                    }
+
+                    // If the first symbol is the symbol "do", then evaluate
+                    // all elements of a list passed to the "do" and return the
+                    // final evaluated element.
+                    Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "do" => {
+                        ast = eval_do(exprs, env.clone())?;
+                    }
+
+                    // If the first symbol is "if", then evaluate the first
+                    // parameter. If it is anything other than `Nil` or `false`,
+                    // then evaluate and return the 2nd parameter. Otherwise,
+                    // evaluate and return the 3rd parameter. If there is no 3rd
+                    // parameter, just return `Nil`.
+                    Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "if" => {
+                        ast = eval_if(exprs, env.clone())?;
+                    }
+
+                    // If the first symbol is "fn*", then return a new function closure.
+                    Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "fn*" => {
+                        return eval_fn_star(exprs, env)
+                    }
+
+                    // Otherwise, call `eval_ast` to get a new evaluated list.
+                    // The first element in the list, `expr0`, is expected to be
+                    // some sort of MAL function.
+                    _ => match eval_ast(ast, env.clone())? {
+                        Expr::List(new_exprs) => {
+                            let func = &new_exprs[0];
+                            let args = new_exprs[1..].to_vec();
+                            match func {
+                                // For simple functions:
+                                Expr::Constant(Atom::Func(_)) => return func.apply(args),
+
+                                // For functions that support tail call optimization:
+                                Expr::Constant(Atom::FnStar {
+                                    body,
+                                    env: fenv,
+                                    params,
+                                    is_variadic,
+                                    ..
+                                }) => {
+                                    let fenv = Weak::upgrade(fenv).expect(
+                                        "Error getting reference to fn* env in apply stage!",
+                                    );
+
+                                    // Bind the function's env, and set ast to the function body.
+                                    // The function will then be evaluated on the next loop.
+                                    let apply_env =
+                                        Arc::new(Env::bind(params.clone(), args, *is_variadic)?);
+
+                                    Env::add_child(&fenv, &apply_env);
+                                    arc_env_keeper.push(env.clone());
+
+                                    env = apply_env;
+                                    ast = body.as_ref().clone();
+                                }
+
+                                _ => return Err(Error::s("Attempt to call a non-function!")),
+                            }
+                        }
+
+                        other => {
+                            return Err(Error::s(format!(
+                                "Expected a list when evaluating a list.\nGot {}",
+                                other
+                            )))
+                        }
+                    },
                 }
             }
 
@@ -354,14 +349,14 @@ fn eval_fn_star(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
 }
 
 /// print
-fn print(ast: Expr) -> String {
+fn print(ast: &Expr) -> String {
     ast.pr_str(true)
 }
 
 /// The main REPL.
 fn rep(line: impl ToString, env: Arc<Env>) -> Result<String, Box<dyn std::error::Error>> {
     match read_line(&line.to_string()) {
-        Ok(ast) => Ok(print(eval(ast, env)?)),
+        Ok(ast) => Ok(print(&eval(ast, env)?)),
         Err(err_string) => Err(Error::s(err_string)),
     }
 }
@@ -370,10 +365,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ==> core.rs: Namespace defined by Rust.
     let builtin_env = Arc::new(Env::from_iter(core::get_ns()));
 
+    // Add a method to eval any ast from within MAL itself. This allows us to
+    // treat mal data as a mal program.
+    let weak_builtin_env = Arc::downgrade(&builtin_env);
+    builtin_env.insert(
+        HMK::Sym("eval".to_string()),
+        Arc::new(Expr::func(move |args| {
+            mal_arg_length_check!("eval", 1, args);
+            eval(
+                args[0].clone(),
+                Weak::upgrade(&weak_builtin_env)
+                    .expect("Could not upgrade Weak reference to builtin_env in eval call."),
+            )
+        })),
+    );
+
     // ==> core.mal: Namespace defined by MAL.
     // Define the `not` function:
     rep(
         "(def! not (fn* (a) (if a false true)))",
+        builtin_env.clone(),
+    )?;
+
+    // Define a function for loading from another file. It:
+    // 1. Calls `slurp` to read the file in by name.
+    // 2. Wraps the contents with `(do ...)` so the whole file is treated as a
+    //    single program AST.
+    // 3. Calls `read-string` to parse it into mal data.
+    // 4. Calls `eval` to evaluate/run it.
+    rep(
+        r#"(def! load-file (fn* (f) (
+                eval (read-string (
+                    str "(do " (slurp f) "\nnil)")))))"#,
         builtin_env.clone(),
     )?;
 

@@ -1,6 +1,6 @@
 //! For parsing input via `nom`.
 
-use crate::types::{Atom, Expr, HashMapKey};
+use crate::types::{Atom, Error, Expr, ExprResult, HashMapKey};
 
 use nom::{
     branch::alt,
@@ -87,7 +87,7 @@ fn parse_string<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Atom
             preceded(
                 char('\"'),
                 cut(terminated(
-                    map(opt(parse_string_of_chars), |o| dbg!(o.unwrap_or_default())),
+                    map(opt(parse_string_of_chars), |o| o.unwrap_or_default()),
                     char('\"'),
                 )),
             ),
@@ -247,12 +247,26 @@ where
 
 /// Parses a list.
 fn parse_list<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Expr, E> {
-    map(s_paren_exp(many0(parse_expr)), Expr::List)(i)
+    map(s_paren_exp(many0(parse_expr)), |exprs| {
+        Expr::List(
+            exprs
+                .into_iter()
+                .filter(|expr| !matches!(expr, Expr::Comment))
+                .collect(),
+        )
+    })(i)
 }
 
 /// Parses a vector.
 fn parse_vec<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, Expr, E> {
-    map(s_bracket_exp(many0(parse_expr)), Expr::Vec)(i)
+    map(s_bracket_exp(many0(parse_expr)), |exprs| {
+        Expr::Vec(
+            exprs
+                .into_iter()
+                .filter(|expr| !matches!(expr, Expr::Comment))
+                .collect(),
+        )
+    })(i)
 }
 
 /// Parses a hash-map key.
@@ -422,4 +436,10 @@ pub fn read_line(s: &str) -> std::result::Result<Expr, String> {
         Ok((_, expr)) => Ok(expr),
         _ => std::result::Result::Err("Unknown/incomplete error".into()),
     }
+}
+
+/// Exactly the same as `read_line`, except that it returns our custom `Error`
+/// type.
+pub fn read_str(s: &str) -> ExprResult {
+    read_line(s).map_err(Error::s)
 }

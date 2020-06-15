@@ -92,8 +92,8 @@ impl Expr {
     /// Creates a new `Atom::FnStar` wrapped in a `Expr::Constant`.
     pub fn fn_star(
         exprs: Vec<Self>,
-        env: Env,
-        eval: impl Fn(Self, Env) -> ExprResult + Send + Sync + 'static,
+        parent_env: &Arc<Env>,
+        eval: impl Fn(Self, Arc<Env>) -> ExprResult + Send + Sync + 'static,
     ) -> ExprResult {
         use HashMapKey as HMK;
 
@@ -180,11 +180,23 @@ impl Expr {
                 )));
             }
         }
+
+        // Create a new `Env` just for this function, so that the function can
+        // keep a reference to the parent `Env` without creating a Arc-loop
+        // (i.e. memory leak!).
+        let fenv = Arc::new(Env::new());
+        Env::add_child(parent_env, &fenv);
+
+        // The parent `env` will keep an Arc<Env> for `fenv` alive for as long
+        // as `env` is alive. So, it is safe for us to downgrade `fenv` into a
+        // `Weak<Env>`.
+        let fenv = Arc::downgrade(&fenv);
+
         // Return the final FnStar!
         Ok(Expr::Constant(Atom::FnStar {
             body: Arc::new(fn_body),
             params: fn_arg_keys,
-            env: Arc::downgrade(&env),
+            env: fenv,
             is_variadic: has_var_arg,
             eval: Arc::new(eval),
         }))
