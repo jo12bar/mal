@@ -350,7 +350,7 @@ fn eval_if(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
 
 /// A function closure (often called a lamba function in lisps.)
 fn eval_fn_star(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
-    Expr::fn_star(exprs, &env, eval)
+    Expr::fn_star(exprs, &env, |ast, env| eval(ast, env.clone()))
 }
 
 /// print

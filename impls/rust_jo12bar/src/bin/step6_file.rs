@@ -14,7 +14,7 @@ use std::{
 };
 
 /// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
+fn eval_ast(ast: Expr, env: &Arc<Env>) -> ExprResult {
     match ast.clone() {
         Expr::Constant(Atom::Sym(sym)) => {
             // Look up symbol in `env`, and return its associated value if found.
@@ -32,7 +32,7 @@ fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
             let mut evaluated_exprs = Vec::with_capacity(exprs.len());
 
             for expr in exprs.iter() {
-                evaluated_exprs.push(eval(expr.clone(), env.clone())?);
+                evaluated_exprs.push(eval(expr.clone(), env)?);
             }
 
             Ok(Expr::List(evaluated_exprs))
@@ -44,7 +44,7 @@ fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
             let mut evaluated_exprs = Vec::with_capacity(exprs.len());
 
             for expr in exprs.iter() {
-                evaluated_exprs.push(eval(expr.clone(), env.clone())?);
+                evaluated_exprs.push(eval(expr.clone(), env)?);
             }
 
             Ok(Expr::Vec(evaluated_exprs))
@@ -59,7 +59,7 @@ fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
             let mut new_hashmap = HashMap::with_capacity(hmap.len());
 
             for (k, v) in hmap.iter() {
-                new_hashmap.insert(k.clone(), eval(v.clone(), env.clone())?);
+                new_hashmap.insert(k.clone(), eval(v.clone(), env)?);
             }
 
             Ok(Expr::HashMap(new_hashmap))
@@ -70,9 +70,9 @@ fn eval_ast(ast: Expr, env: Arc<Env>) -> ExprResult {
 }
 
 /// Evaluates an expression.
-fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
+fn eval(ast: Expr, env: &Arc<Env>) -> ExprResult {
     let mut ast = ast;
-    let mut env = env;
+    let mut env = env.clone();
 
     // The below vector helps with keeping Arc<Env>'s alive in the case of
     // tail-call optimization. The value of `env` could be set to completely
@@ -99,7 +99,7 @@ fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
                     // "def!", then call the set method on the current
                     // environment `env`.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "def!" => {
-                        return eval_def_bang(exprs, env)
+                        return eval_def_bang(exprs, &env)
                     }
 
                     // If the first expression in the list, `expr01`, is the
@@ -109,7 +109,8 @@ fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
                     // The second parameter is evaluated using the new "let*"
                     // env.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "let*" => {
-                        let env_ast = eval_let_star(exprs, env)?;
+                        let env_ast = eval_let_star(exprs, &env)?;
+                        arc_env_keeper.push(env.clone());
                         ast = env_ast.0;
                         env = env_ast.1;
                     }
@@ -118,7 +119,7 @@ fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
                     // all elements of a list passed to the "do" and return the
                     // final evaluated element.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "do" => {
-                        ast = eval_do(exprs, env.clone())?;
+                        ast = eval_do(exprs, &env)?;
                     }
 
                     // If the first symbol is "if", then evaluate the first
@@ -127,18 +128,18 @@ fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
                     // evaluate and return the 3rd parameter. If there is no 3rd
                     // parameter, just return `Nil`.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "if" => {
-                        ast = eval_if(exprs, env.clone())?;
+                        ast = eval_if(exprs, &env)?;
                     }
 
                     // If the first symbol is "fn*", then return a new function closure.
                     Expr::Constant(Atom::Sym(ref a0sym)) if a0sym == "fn*" => {
-                        return eval_fn_star(exprs, env)
+                        return eval_fn_star(exprs, &env)
                     }
 
                     // Otherwise, call `eval_ast` to get a new evaluated list.
                     // The first element in the list, `expr0`, is expected to be
                     // some sort of MAL function.
-                    _ => match eval_ast(ast, env.clone())? {
+                    _ => match eval_ast(ast, &env)? {
                         Expr::List(new_exprs) => {
                             let func = &new_exprs[0];
                             let args = new_exprs[1..].to_vec();
@@ -186,13 +187,13 @@ fn eval(ast: Expr, env: Arc<Env>) -> ExprResult {
 
             // If `ast` is *not* a `Expr::List`, then return the result of calling
             // `eval_ast` on it.
-            other_expr => return eval_ast(other_expr, env),
+            other_expr => return eval_ast(other_expr, &env),
         }
     }
 }
 
 /// Defines a new symbol in the current environment.
-fn eval_def_bang(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
+fn eval_def_bang(exprs: Vec<Expr>, env: &Arc<Env>) -> ExprResult {
     if exprs.len() != 3 {
         return Err(Error::s(format!(
             "Wrong number of expressions after a \'def!\'.\n\
@@ -203,7 +204,7 @@ fn eval_def_bang(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
 
     match &exprs[1] {
         Expr::Constant(sym @ Atom::Sym(..)) => {
-            let evaluated_expr_2 = eval(exprs[2].clone(), env.clone())?;
+            let evaluated_expr_2 = eval(exprs[2].clone(), env)?;
             env.insert(
                 HMK::try_from(sym.clone())?,
                 Arc::new(evaluated_expr_2.clone()),
@@ -224,7 +225,7 @@ fn eval_def_bang(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
 /// Returns the new `Env` and the `Expr` to be evaluated with it.
 fn eval_let_star(
     exprs: Vec<Expr>,
-    env: Arc<Env>,
+    env: &Arc<Env>,
 ) -> Result<(Expr, Arc<Env>), Box<dyn std::error::Error>> {
     if exprs.len() != 3 {
         return Err(Error::s(format!(
@@ -253,7 +254,7 @@ fn eval_let_star(
             // Iterate over the bindings list in pairs.
             for (k, v) in expr1_vec.chunks_exact(2).map(|s| (&s[0], &s[1])) {
                 // Evaluate the binding's value using the in-progress let_env.
-                let evaluated_v = eval(v.clone(), let_env.clone())?;
+                let evaluated_v = eval(v.clone(), &let_env)?;
 
                 match k {
                     // Set a new key in the let_env to the evaluated value.
@@ -285,7 +286,7 @@ fn eval_let_star(
 
 /// Evaluates all the parameters *except the last one*, and returns the last
 /// parameter (to be `eval()`'ed).
-fn eval_do(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
+fn eval_do(exprs: Vec<Expr>, env: &Arc<Env>) -> ExprResult {
     // Get rid of the initial "do" sym:
     let params = &exprs[1..];
 
@@ -305,7 +306,7 @@ fn eval_do(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
 
 /// An if-else statement. Returns the expression to be evaluated, based on the
 /// conditional given.
-fn eval_if(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
+fn eval_if(exprs: Vec<Expr>, env: &Arc<Env>) -> ExprResult {
     // The length should be *at least* 3, for the symbol "if", the conditional,
     // and the "true" branch.
     if exprs.len() < 3 {
@@ -344,7 +345,7 @@ fn eval_if(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
 }
 
 /// A function closure (often called a lamba function in lisps.)
-fn eval_fn_star(exprs: Vec<Expr>, env: Arc<Env>) -> ExprResult {
+fn eval_fn_star(exprs: Vec<Expr>, env: &Arc<Env>) -> ExprResult {
     Expr::fn_star(exprs, &env, eval)
 }
 
@@ -354,7 +355,7 @@ fn print(ast: &Expr) -> String {
 }
 
 /// The main REPL.
-fn rep(line: impl ToString, env: Arc<Env>) -> Result<String, Box<dyn std::error::Error>> {
+fn rep(line: impl ToString, env: &Arc<Env>) -> Result<String, Box<dyn std::error::Error>> {
     match read_line(&line.to_string()) {
         Ok(ast) => Ok(print(&eval(ast, env)?)),
         Err(err_string) => Err(Error::s(err_string)),
@@ -374,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mal_arg_length_check!("eval", 1, args);
             eval(
                 args[0].clone(),
-                Weak::upgrade(&weak_builtin_env)
+                &Weak::upgrade(&weak_builtin_env)
                     .expect("Could not upgrade Weak reference to builtin_env in eval call."),
             )
         })),
@@ -382,10 +383,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ==> core.mal: Namespace defined by MAL.
     // Define the `not` function:
-    rep(
-        "(def! not (fn* (a) (if a false true)))",
-        builtin_env.clone(),
-    )?;
+    rep("(def! not (fn* (a) (if a false true)))", &builtin_env)?;
 
     // Define a function for loading from another file. It:
     // 1. Calls `slurp` to read the file in by name.
@@ -397,7 +395,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         r#"(def! load-file (fn* (f) (
                 eval (read-string (
                     str "(do " (slurp f) "\nnil)")))))"#,
-        builtin_env.clone(),
+        &builtin_env,
     )?;
 
     let mut readline = Readline::new("mal> ");
@@ -406,7 +404,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !line.is_empty() {
             readline.save_history();
 
-            match rep(line, builtin_env.clone()) {
+            match rep(line, &builtin_env) {
                 Ok(out) => println!("{}", out),
                 Err(e) => eprintln!("Error: {}", e),
             }

@@ -43,7 +43,7 @@ pub enum Atom {
 
         /// The function to evaluate the function body with.
         /// The first parameter will be `body`, and the second will be `env`.
-        eval: Arc<dyn Fn(Expr, Arc<Env>) -> ExprResult + Send + Sync>,
+        eval: Arc<dyn Fn(Expr, &Arc<Env>) -> ExprResult + Send + Sync>,
     },
 }
 

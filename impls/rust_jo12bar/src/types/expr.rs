@@ -93,7 +93,7 @@ impl Expr {
     pub fn fn_star(
         exprs: Vec<Self>,
         parent_env: &Arc<Env>,
-        eval: impl Fn(Self, Arc<Env>) -> ExprResult + Send + Sync + 'static,
+        eval: impl Fn(Self, &Arc<Env>) -> ExprResult + Send + Sync + 'static,
     ) -> ExprResult {
         use HashMapKey as HMK;
 
