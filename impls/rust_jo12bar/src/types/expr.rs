@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     convert::{From, TryFrom},
     fmt,
-    sync::Arc,
+    sync::{Arc, RwLock, Weak},
 };
 
 /// An expression. Could just be a single `Atom`, or it could be something like
@@ -202,13 +202,47 @@ impl Expr {
         }))
     }
 
+    /// Create a new `Expr::Constant(Atom::Atom(..))``.
+    pub fn atom(expr: &Self) -> Self {
+        Expr::Constant(Atom::Atom(Arc::new(RwLock::new(expr.clone()))))
+    }
+
     /// Apply arguments to a function. Will return an `Error` if you attempt to
     /// call a non-function `Expr`.
+    ///
+    /// Note that tail-call optimization is not supported by this method.
     pub fn apply(&self, args: Vec<Expr>) -> ExprResult {
         match self {
+            // Simple functions:
             Self::Constant(Atom::Func(f)) => f(args),
 
-            _ => Err(Error::s("Attempt to call a non-function!")),
+            // Functions that support tail-call optimization (though we don't do
+            // that here):
+            Self::Constant(Atom::FnStar {
+                body,
+                params,
+                env,
+                eval,
+                is_variadic,
+                ..
+            }) => {
+                let env =
+                    Weak::upgrade(env).expect("apply: Could not upgrade weak reference to fn* env");
+
+                // Drop any children that already exist in the envto avoid
+                // accumulating a bunch of Arc's. This is fine as the children
+                // can still access their parents, and will be kept alive by
+                // Rust's call stack for as long as needed.
+                while let Some(_) = env.pop_child() {}
+
+                let func_env = Arc::new(Env::bind(params.clone(), args, *is_variadic)?);
+
+                Env::add_child(&env, &func_env);
+
+                eval(body.as_ref().clone(), &func_env)
+            }
+
+            _ => Err(Error::s("apply: Attempt to call a non-function!")),
         }
     }
 
@@ -242,6 +276,75 @@ impl Expr {
                 self
             ))),
         }
+    }
+
+    /// Attempts to dereference a `Atom::Atom`, copying and returning its data.
+    pub fn deref(&self) -> ExprResult {
+        match self {
+            Self::Constant(Atom::Atom(a)) => Ok(a
+                .read()
+                .expect("deref: Could not read atom; Poisoned RwLock.")
+                .clone()),
+
+            _ => Err(Error::s(format!(
+                "deref: invalid expression type; expected atom, got {}",
+                self
+            ))),
+        }
+    }
+
+    /// Sets the `Expr` that a `Atom::Atom` points at to something else, and
+    /// returns it.
+    pub fn atom_reset(&self, expr: Self) -> ExprResult {
+        if let Self::Constant(Atom::Atom(a)) = self {
+            let mut internal_expr = a
+                .write()
+                .expect("reset!: Could not write to atom; Poisoned RwLock.");
+
+            *internal_expr = expr.clone();
+
+            Ok(expr)
+        } else {
+            Err(Error::s(format!(
+                "reset!: invalid expression type; expected atom, got {}",
+                self
+            )))
+        }
+    }
+
+    /// Applies a function, with optional arguments, to an `Atom::Atom`, and returns
+    /// a new Atom containing the result.
+    pub fn atom_swap(&self, func: &Self, func_args: &[Self]) -> ExprResult {
+        if !matches!(self, Expr::Constant(Atom::Atom(..))) {
+            return Err(Error::s(format!(
+                "swap!: invalid expression type; expected atom, got {}",
+                self
+            )));
+        }
+
+        if !matches!(func, Expr::Constant(Atom::Func(..)) | Expr::Constant(Atom::FnStar { .. })) {
+            return Err(Error::s(format!(
+                "swap!: invalid expression type; expected func or fn*, got {}",
+                func
+            )));
+        }
+
+        // Pull the current value out of the Atom:
+        let curr_val = self
+            .deref()
+            .map_err(|e| Error::s(format!("swap!: {}", e)))?;
+
+        // Prepend it to the function arguments list:
+        let func_args: Vec<_> = [curr_val].iter().chain(func_args).cloned().collect();
+
+        // Apply the function to get the new value:
+        let new_val = func
+            .apply(func_args)
+            .map_err(|e| Error::s(format!("swap!: {}", e)))?;
+
+        // Set the Atom's value to the new value, and return the new value.
+        self.atom_reset(new_val)
+            .map_err(|e| Error::s(format!("swap!: {}", e)))
     }
 }
 

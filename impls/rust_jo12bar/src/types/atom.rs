@@ -3,7 +3,7 @@ use crate::env::Env;
 use std::{
     convert::From,
     fmt,
-    sync::{Arc, Weak},
+    sync::{Arc, RwLock, Weak},
 };
 
 /// Primitive values.
@@ -45,6 +45,15 @@ pub enum Atom {
         /// The first parameter will be `body`, and the second will be `env`.
         eval: Arc<dyn Fn(Expr, &Arc<Env>) -> ExprResult + Send + Sync>,
     },
+
+    /// Yes, the naming is kinda bad, but this is a MAL Atom, which is a way to
+    /// represent *state*. It is heavily inspired by
+    /// [Clojure's Atoms](https://clojure.org/about/state).
+    ///
+    /// An atom holds a mutable shared reference to an `Expr` of any type. The
+    /// reference can be cloned, read, or modified to point at another `Expr`,
+    /// but (importantly!) the underlying `Expr` is immutable.
+    Atom(Arc<RwLock<Expr>>),
 }
 
 impl PartialEq for Atom {
@@ -60,6 +69,12 @@ impl PartialEq for Atom {
 
             // Two functions can never equal each other.
             (Self::Func(..), Self::Func(..)) => false,
+            (Self::FnStar { .. }, Self::FnStar { .. }) => false,
+
+            // Two references to expressions cannot equal each other. This is
+            // is mostly a limitation of using a RwLock, but the MAL spec also
+            // doesn't make any gaurantees about reference equality.
+            (Self::Atom(..), Self::Atom(..)) => false,
 
             // Two atoms of differing typw cannot equal each other.
             _ => false,
@@ -88,6 +103,13 @@ impl fmt::Display for Atom {
                     .collect::<Vec<_>>()
                     .join(" "),
                 body
+            ),
+
+            Self::Atom(a) => write!(
+                f,
+                "(atom {})",
+                a.read()
+                    .expect("Failed to read from Atom::Atom; RwLock poisoned.")
             ),
         }
     }
@@ -129,6 +151,8 @@ impl fmt::Debug for Atom {
                     ),
                 )
                 .finish(),
+
+            Self::Atom(a) => write!(f, "Atom({:?})", a),
         }
     }
 }

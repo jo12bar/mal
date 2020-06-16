@@ -4,7 +4,6 @@ use crate::{
     reader,
     types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
 };
-use lazy_static::lazy_static;
 use std::{fs::File, io::prelude::*, path::Path};
 
 /// Allows you to check that a function call receives some fixed number of
@@ -302,6 +301,46 @@ fn slurp(args: Vec<Expr>) -> ExprResult {
     }
 }
 
+/// Wraps an Expr in a Atom::Atom.
+fn atom(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("atom", 1, args);
+    Ok(Expr::atom(&args[0]))
+}
+
+/// Attempts to deref a Atom::Atom.
+fn deref(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("deref", 1, args);
+    args[0].deref()
+}
+
+/// Sets a Atom::Atom to point to some other expression.
+fn reset_bang(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("reset!", 2, args);
+
+    let atom = &args[0];
+    let expr = &args[1];
+
+    atom.atom_reset(expr.clone())
+}
+
+/// Maps a Atom::Atom to a new Atom::Atom given a function, and returns the value.
+fn swap_bang(args: Vec<Expr>) -> ExprResult {
+    // There should be *at least* two args: the atom and the function. Anything
+    // after that will be extra arguments passed to the function.
+    if args.len() < 2 {
+        return Err(Error::s(format!(
+            "swap!: Expected at least 2 arguments, found {}",
+            args.len()
+        )));
+    }
+
+    let atom = &args[0];
+    let func = &args[1];
+    let func_args = &args[2..];
+
+    atom.atom_swap(func, func_args)
+}
+
 /// Just a convenience function for making a `HashMapKey::Sym(String)`.
 macro_rules! hkm {
     ($string:expr) => {
@@ -355,7 +394,10 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
         ),
         (
             hkm!("fn?"),
-            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Func(..)))),
+            Expr::func(mal_expr_is_type!(
+                Expr::Constant(Atom::Func(..)),
+                Expr::Constant(Atom::FnStar { .. })
+            )),
         ),
         (
             hkm!("constant?"),
@@ -366,6 +408,10 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
         (
             hkm!("hash?"),
             Expr::func(mal_expr_is_type!(Expr::HashMap(..))),
+        ),
+        (
+            hkm!("atom?"),
+            Expr::func(mal_expr_is_type!(Expr::Constant(Atom::Atom(..)))),
         ),
         // Printing functions:
         (hkm!("pr-str"), Expr::func(pr_str)),
@@ -383,6 +429,11 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
             hkm!("count"),
             Expr::func(|args| args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).count()),
         ),
+        // Atom-related functions:
+        (hkm!("atom"), Expr::func(atom)),
+        (hkm!("deref"), Expr::func(deref)),
+        (hkm!("reset!"), Expr::func(reset_bang)),
+        (hkm!("swap!"), Expr::func(swap_bang)),
         // Comparison functions:
         mal_bin_op!("=", |a, b| Ok(Expr::Constant(Atom::Bool(a == b)))),
         mal_bin_num_op!("<", |a, b| Ok(Expr::Constant(Atom::Bool(a < b)))),
@@ -393,10 +444,4 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
         (hkm!("read-string"), Expr::func(read_string)),
         (hkm!("slurp"), Expr::func(slurp)),
     ]
-}
-
-lazy_static! {
-    /// The core MAL namespace. Includes all the symbols and their bindings that
-    /// should be added to the root `Env` (i.e. via `env_from_iterator(..)`).
-    pub static ref NS: Vec<(HMK, Expr)> = get_ns();
 }

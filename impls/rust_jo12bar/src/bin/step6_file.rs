@@ -159,6 +159,12 @@ fn eval(ast: Expr, env: &Arc<Env>) -> ExprResult {
                                         "Error getting reference to fn* env in apply stage!",
                                     );
 
+                                    // Drop any children that already exist in the fenv to avoid
+                                    // accumulating a bunch of Arc's. This is fine as the children
+                                    // can still access their parents, and will be kept alive in
+                                    // arc_env_keeper for as long as they are needed.
+                                    while let Some(_) = fenv.pop_child() {}
+
                                     // Bind the function's env, and set ast to the function body.
                                     // The function will then be evaluated on the next loop.
                                     let apply_env =

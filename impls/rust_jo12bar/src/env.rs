@@ -156,7 +156,7 @@ impl Env {
 
     /// Traverses the chain of `Env` and parent `Env`'s, and returns the one that
     /// contains the key. Returns `None` if the key is not found anywhere.
-    pub fn find(starting_env: &Arc<Env>, key: &HashMapKey) -> Option<Arc<Self>> {
+    pub fn find(starting_env: &Arc<Self>, key: &HashMapKey) -> Option<Arc<Self>> {
         if starting_env.contains_key(key) {
             Some(starting_env.clone())
         } else if let Some(parent) = starting_env.get_parent() {
@@ -174,6 +174,12 @@ impl Env {
         // Link child to parent with a Weak ref:
         let mut child_parent = child.parent.write().unwrap();
         *child_parent = Arc::downgrade(parent);
+    }
+
+    /// Pops the last child that was added to this `Env`, and returns it.
+    /// Returns `None` if there are no children.
+    pub fn pop_child(&self) -> Option<Arc<Self>> {
+        self.children.write().unwrap().pop()
     }
 }
 

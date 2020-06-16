@@ -220,7 +220,6 @@ version = "0.1.0"
 dependencies = [
  "dashmap",
  "dirs 2.0.2",
- "lazy_static",
  "linefeed",
  "nom",
 ]
