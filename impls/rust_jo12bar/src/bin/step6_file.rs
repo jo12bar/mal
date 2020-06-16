@@ -13,60 +13,69 @@ use std::{
     sync::{Arc, Weak},
 };
 
-/// Evaluates a single sub-section of the AST.
-fn eval_ast(ast: Expr, env: &Arc<Env>) -> ExprResult {
-    match ast.clone() {
-        Expr::Constant(Atom::Sym(sym)) => {
-            // Look up symbol in `env`, and return its associated value if found.
-            // If not found, raise an error.
-            if let Some(func) = env.get(&HMK::Sym(sym.clone())) {
-                Ok(func.as_ref().clone())
-            } else {
-                Err(Error::s(format!("Symbol \'{}\' not found", sym)))
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // ==> core.rs: Namespace defined by Rust.
+    let builtin_env = Arc::new(Env::from_iter(core::get_ns()));
+
+    // Add a method to eval any ast from within MAL itself. This allows us to
+    // treat mal data as a mal program.
+    let weak_builtin_env = Arc::downgrade(&builtin_env);
+    builtin_env.insert(
+        HMK::Sym("eval".to_string()),
+        Arc::new(Expr::func(move |args| {
+            mal_arg_length_check!("eval", 1, args);
+            eval(
+                args[0].clone(),
+                &Weak::upgrade(&weak_builtin_env)
+                    .expect("Could not upgrade Weak reference to builtin_env in eval call."),
+            )
+        })),
+    );
+
+    // ==> core.mal: Namespace defined by MAL.
+    // Define the `not` function:
+    rep("(def! not (fn* (a) (if a false true)))", &builtin_env)?;
+
+    // Define a function for loading from another file. It:
+    // 1. Calls `slurp` to read the file in by name.
+    // 2. Wraps the contents with `(do ...)` so the whole file is treated as a
+    //    single program AST.
+    // 3. Calls `read-string` to parse it into mal data.
+    // 4. Calls `eval` to evaluate/run it.
+    rep(
+        r#"(def! load-file (fn* (f) (
+                eval (read-string (
+                    str "(do " (slurp f) "\nnil)")))))"#,
+        &builtin_env,
+    )?;
+
+    let mut readline = Readline::new("mal> ");
+
+    while let Some(line) = readline.get() {
+        if !line.is_empty() {
+            readline.save_history();
+
+            match rep(line, &builtin_env) {
+                Ok(out) => println!("{}", out),
+                Err(e) => eprintln!("Error: {}", e),
             }
         }
-
-        Expr::List(exprs) => {
-            // Return a new list that is the result of calling `eval()` on each
-            // member of the original list.
-            let mut evaluated_exprs = Vec::with_capacity(exprs.len());
-
-            for expr in exprs.iter() {
-                evaluated_exprs.push(eval(expr.clone(), env)?);
-            }
-
-            Ok(Expr::List(evaluated_exprs))
-        }
-
-        Expr::Vec(exprs) => {
-            // Return a new vector that is the result of calling `eval()` on
-            // each element of the original vector.
-            let mut evaluated_exprs = Vec::with_capacity(exprs.len());
-
-            for expr in exprs.iter() {
-                evaluated_exprs.push(eval(expr.clone(), env)?);
-            }
-
-            Ok(Expr::Vec(evaluated_exprs))
-        }
-
-        Expr::HashMap(hmap) => {
-            // Return a new hash-map, where:
-            //
-            // - Each each key is the same key as from the original hash-map
-            // - Each value is the result of calling `eval()` on the original
-            //   hash-map's corresponding value.
-            let mut new_hashmap = HashMap::with_capacity(hmap.len());
-
-            for (k, v) in hmap.iter() {
-                new_hashmap.insert(k.clone(), eval(v.clone(), env)?);
-            }
-
-            Ok(Expr::HashMap(new_hashmap))
-        }
-
-        _ => Ok(ast),
     }
+
+    Ok(())
+}
+
+/// The main REP function.
+fn rep(line: impl ToString, env: &Arc<Env>) -> Result<String, Box<dyn std::error::Error>> {
+    match read_line(&line.to_string()) {
+        Ok(ast) => Ok(print(&eval(ast, env)?)),
+        Err(err_string) => Err(Error::s(err_string)),
+    }
+}
+
+/// print
+fn print(ast: &Expr) -> String {
+    ast.pr_str(true)
 }
 
 /// Evaluates an expression.
@@ -195,6 +204,62 @@ fn eval(ast: Expr, env: &Arc<Env>) -> ExprResult {
             // `eval_ast` on it.
             other_expr => return eval_ast(other_expr, &env),
         }
+    }
+}
+
+/// Evaluates a single sub-section of the AST.
+fn eval_ast(ast: Expr, env: &Arc<Env>) -> ExprResult {
+    match ast.clone() {
+        Expr::Constant(Atom::Sym(sym)) => {
+            // Look up symbol in `env`, and return its associated value if found.
+            // If not found, raise an error.
+            if let Some(func) = env.get(&HMK::Sym(sym.clone())) {
+                Ok(func.as_ref().clone())
+            } else {
+                Err(Error::s(format!("Symbol \'{}\' not found", sym)))
+            }
+        }
+
+        Expr::List(exprs) => {
+            // Return a new list that is the result of calling `eval()` on each
+            // member of the original list.
+            let mut evaluated_exprs = Vec::with_capacity(exprs.len());
+
+            for expr in exprs.iter() {
+                evaluated_exprs.push(eval(expr.clone(), env)?);
+            }
+
+            Ok(Expr::List(evaluated_exprs))
+        }
+
+        Expr::Vec(exprs) => {
+            // Return a new vector that is the result of calling `eval()` on
+            // each element of the original vector.
+            let mut evaluated_exprs = Vec::with_capacity(exprs.len());
+
+            for expr in exprs.iter() {
+                evaluated_exprs.push(eval(expr.clone(), env)?);
+            }
+
+            Ok(Expr::Vec(evaluated_exprs))
+        }
+
+        Expr::HashMap(hmap) => {
+            // Return a new hash-map, where:
+            //
+            // - Each each key is the same key as from the original hash-map
+            // - Each value is the result of calling `eval()` on the original
+            //   hash-map's corresponding value.
+            let mut new_hashmap = HashMap::with_capacity(hmap.len());
+
+            for (k, v) in hmap.iter() {
+                new_hashmap.insert(k.clone(), eval(v.clone(), env)?);
+            }
+
+            Ok(Expr::HashMap(new_hashmap))
+        }
+
+        _ => Ok(ast),
     }
 }
 
@@ -353,69 +418,4 @@ fn eval_if(exprs: Vec<Expr>, env: &Arc<Env>) -> ExprResult {
 /// A function closure (often called a lamba function in lisps.)
 fn eval_fn_star(exprs: Vec<Expr>, env: &Arc<Env>) -> ExprResult {
     Expr::fn_star(exprs, &env, eval)
-}
-
-/// print
-fn print(ast: &Expr) -> String {
-    ast.pr_str(true)
-}
-
-/// The main REPL.
-fn rep(line: impl ToString, env: &Arc<Env>) -> Result<String, Box<dyn std::error::Error>> {
-    match read_line(&line.to_string()) {
-        Ok(ast) => Ok(print(&eval(ast, env)?)),
-        Err(err_string) => Err(Error::s(err_string)),
-    }
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ==> core.rs: Namespace defined by Rust.
-    let builtin_env = Arc::new(Env::from_iter(core::get_ns()));
-
-    // Add a method to eval any ast from within MAL itself. This allows us to
-    // treat mal data as a mal program.
-    let weak_builtin_env = Arc::downgrade(&builtin_env);
-    builtin_env.insert(
-        HMK::Sym("eval".to_string()),
-        Arc::new(Expr::func(move |args| {
-            mal_arg_length_check!("eval", 1, args);
-            eval(
-                args[0].clone(),
-                &Weak::upgrade(&weak_builtin_env)
-                    .expect("Could not upgrade Weak reference to builtin_env in eval call."),
-            )
-        })),
-    );
-
-    // ==> core.mal: Namespace defined by MAL.
-    // Define the `not` function:
-    rep("(def! not (fn* (a) (if a false true)))", &builtin_env)?;
-
-    // Define a function for loading from another file. It:
-    // 1. Calls `slurp` to read the file in by name.
-    // 2. Wraps the contents with `(do ...)` so the whole file is treated as a
-    //    single program AST.
-    // 3. Calls `read-string` to parse it into mal data.
-    // 4. Calls `eval` to evaluate/run it.
-    rep(
-        r#"(def! load-file (fn* (f) (
-                eval (read-string (
-                    str "(do " (slurp f) "\nnil)")))))"#,
-        &builtin_env,
-    )?;
-
-    let mut readline = Readline::new("mal> ");
-
-    while let Some(line) = readline.get() {
-        if !line.is_empty() {
-            readline.save_history();
-
-            match rep(line, &builtin_env) {
-                Ok(out) => println!("{}", out),
-                Err(e) => eprintln!("Error: {}", e),
-            }
-        }
-    }
-
-    Ok(())
 }
