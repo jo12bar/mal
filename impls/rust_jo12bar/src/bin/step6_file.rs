@@ -1,3 +1,6 @@
+use clap::{
+    app_from_crate, crate_authors, crate_description, crate_name, crate_version, AppSettings, Arg,
+};
 use mal_rust_jo12bar::{
     core,
     env::Env,
@@ -7,6 +10,7 @@ use mal_rust_jo12bar::{
     types::{Atom, Error, Expr, ExprResult, HashMapKey as HMK},
 };
 use std::{
+    borrow::Cow,
     collections::HashMap,
     convert::TryFrom,
     iter::FromIterator,
@@ -14,6 +18,53 @@ use std::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli_matches = app_from_crate!()
+        .setting(AppSettings::TrailingVarArg)
+        .arg(Arg::with_name("SCRIPT")
+            .help(
+                "The MAL script to run. If this is not provided, then MAL will run in REPL mode.",
+            )
+            .index(1)
+            .required(false)
+        )
+        .arg(Arg::with_name("SCRIPT_ARGV")
+            .help(
+                "Arguments to pass to the script. Will be bound to the symbol *ARGV* as a list of \
+                strings. If not provided, or if MAL is running in REPL mode, then *ARGV* will just \
+                be the empty list `()`."
+            )
+            .index(2)
+            .required(false)
+            .multiple(true)
+        )
+        .get_matches();
+
+    let builtin_env = get_builtin_env()?;
+
+    if cli_matches.is_present("SCRIPT") {
+        let filename = cli_matches.value_of_lossy("SCRIPT").unwrap();
+
+        let argv = Expr::List(if cli_matches.is_present("SCRIPT_ARGV") {
+            cli_matches
+                .values_of_lossy("SCRIPT_ARGV")
+                .unwrap()
+                .into_iter()
+                .map(|s| Expr::Constant(Atom::Str(s)))
+                .collect()
+        } else {
+            vec![]
+        });
+
+        // Run in "script mode."
+        run_script(&builtin_env, filename, argv)
+    } else {
+        // Run in "REPL mode."
+        repl(&builtin_env)
+    }
+}
+
+/// Gets the built-in environment.
+fn get_builtin_env() -> Result<Arc<Env>, Box<dyn std::error::Error>> {
     // ==> core.rs: Namespace defined by Rust.
     let builtin_env = Arc::new(Env::from_iter(core::get_ns()));
 
@@ -49,13 +100,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &builtin_env,
     )?;
 
+    Ok(builtin_env)
+}
+
+/// Script mode.
+fn run_script(
+    env: &Arc<Env>,
+    filename: Cow<'_, str>,
+    argv: Expr,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Bind *ARGV*:
+    env.insert(HMK::Sym("*ARGV*".to_string()), Arc::new(argv));
+
+    // Run the script by using the MAL load-file function.
+    rep(format!("(load-file \"{}\")", filename), env)?;
+
+    Ok(())
+}
+
+/// The main REPL.
+fn repl(env: &Arc<Env>) -> Result<(), Box<dyn std::error::Error>> {
+    // In REPL mode, the symbol *ARGV* is hardcoded to just be an empty Expr::List.
+    env.insert(HMK::Sym("*ARGV*".to_string()), Arc::new(Expr::List(vec![])));
+
     let mut readline = Readline::new("mal> ");
 
     while let Some(line) = readline.get() {
         if !line.is_empty() {
             readline.save_history();
 
-            match rep(line, &builtin_env) {
+            match rep(line, env) {
                 Ok(out) => println!("{}", out),
                 Err(e) => eprintln!("Error: {}", e),
             }

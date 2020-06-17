@@ -2,6 +2,7 @@
 name = "mal_rust_jo12bar"
 version = "0.1.0"
 authors = ["Johann Barnard <johann.b@telus.net>"]
+description = "My attempt at implementing MAL in Rust."
 edition = "2018"
 
 [dependencies]
@@ -9,3 +10,8 @@ linefeed = "0.6"
 dirs = "2.0"
 nom = "5"
 dashmap = "3.11"
+
+[dependencies.clap]
+version = "2.33"
+default-features = false
+features = ["color", "wrap_help"]
