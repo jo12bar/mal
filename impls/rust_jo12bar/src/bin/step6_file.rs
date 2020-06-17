@@ -130,7 +130,11 @@ fn repl(env: &Arc<Env>) -> Result<(), Box<dyn std::error::Error>> {
             readline.save_history();
 
             match rep(line, env) {
-                Ok(out) => println!("{}", out),
+                Ok(out) => {
+                    if out != "".to_string() {
+                        println!("{}", out)
+                    }
+                }
                 Err(e) => eprintln!("Error: {}", e),
             }
         }
