@@ -341,6 +341,52 @@ fn swap_bang(args: Vec<Expr>) -> ExprResult {
     atom.atom_swap(func, func_args)
 }
 
+/// Prepends a list with some value.
+fn cons(args: Vec<Expr>) -> ExprResult {
+    // Expect 2 args:
+    if args.len() != 2 {
+        return Err(Error::s(format!(
+            "cons: Expected 2 arguments, found {}",
+            args.len()
+        )));
+    }
+
+    match &args[1] {
+        Expr::List(v) | Expr::Vec(v) => {
+            let mut new_vec = vec![args[0].clone()];
+            new_vec.extend_from_slice(v);
+            Ok(Expr::List(new_vec))
+        }
+
+        e => Err(Error::s(format!(
+            "cons: Expected list or vector, found {}",
+            e
+        ))),
+    }
+}
+
+/// Concatenates together a bunch of lists and vectors into a single list.
+fn concat(args: Vec<Expr>) -> ExprResult {
+    let mut new_vec = vec![];
+
+    for arg in args.iter() {
+        match arg {
+            Expr::List(v) | Expr::Vec(v) => {
+                new_vec.extend_from_slice(v);
+            }
+
+            e => {
+                return Err(Error::s(format!(
+                    "concat: Expected list or vector, found {}",
+                    e
+                )));
+            }
+        }
+    }
+
+    Ok(Expr::List(new_vec))
+}
+
 /// Just a convenience function for making a `HashMapKey::Sym(String)`.
 macro_rules! hkm {
     ($string:expr) => {
@@ -429,6 +475,8 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
             hkm!("count"),
             Expr::func(|args| args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).count()),
         ),
+        (hkm!("cons"), Expr::func(cons)),
+        (hkm!("concat"), Expr::func(concat)),
         // Atom-related functions:
         (hkm!("atom"), Expr::func(atom)),
         (hkm!("deref"), Expr::func(deref)),
