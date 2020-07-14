@@ -309,6 +309,47 @@
       },
       "args": [],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step7_quote",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step7_quote",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step7_quote",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step7_quote",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step7_quote",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step7_quote",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }
