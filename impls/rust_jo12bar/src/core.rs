@@ -344,12 +344,7 @@ fn swap_bang(args: Vec<Expr>) -> ExprResult {
 /// Prepends a list with some value.
 fn cons(args: Vec<Expr>) -> ExprResult {
     // Expect 2 args:
-    if args.len() != 2 {
-        return Err(Error::s(format!(
-            "cons: Expected 2 arguments, found {}",
-            args.len()
-        )));
-    }
+    mal_arg_length_check!("cons", 2, args);
 
     match &args[1] {
         Expr::List(v) | Expr::Vec(v) => {
@@ -385,6 +380,97 @@ fn concat(args: Vec<Expr>) -> ExprResult {
     }
 
     Ok(Expr::List(new_vec))
+}
+
+/// Returns the element of a list at a given index.
+///
+/// # Usage:
+///
+/// ```ignore
+/// (nth [1 2 3] 1)
+/// ; => 2
+/// ```
+fn nth(args: Vec<Expr>) -> ExprResult {
+    // Need 2 args:
+    mal_arg_length_check!("nth", 2, args);
+
+    match &args[0] {
+        Expr::List(v) | Expr::Vec(v) => match &args[1] {
+            Expr::Constant(Atom::Int(i)) => match v.get(*i as usize) {
+                Some(el) => Ok(el.clone()),
+
+                None => Err(Error::s(format!(
+                    "nth: Index out of bounds. {} items, but index {} was requested.",
+                    v.len(),
+                    i,
+                ))),
+            },
+
+            e => Err(Error::s(format!("nth: Expected integer, found {}", e))),
+        },
+
+        e => Err(Error::s(format!(
+            "nth: Expected list or vector, found {}",
+            e
+        ))),
+    }
+}
+
+/// Returns the first element in a list or vector. Returns `nil` if the list/
+/// vector is empty.
+///
+/// # Usage
+///
+/// ```ignore
+/// (first [1 2 3])
+/// ; => 1
+/// ```
+fn first(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("first", 1, args);
+
+    match &args[0] {
+        Expr::List(v) | Expr::Vec(v) => match v.first() {
+            Some(expr) => Ok(expr.clone()),
+            None => Ok(Expr::Constant(Atom::Nil)),
+        },
+
+        Expr::Constant(Atom::Nil) => Ok(Expr::Constant(Atom::Nil)),
+
+        e => Err(Error::s(format!(
+            "first: Expected list or vector or nil, found {}",
+            e
+        ))),
+    }
+}
+
+/// Returns a new list containing all elements *except* the first one in a list
+/// or vector. Returns `()` if the list/ vector is empty, or if `nil` is passed in.
+///
+/// # Usage
+///
+/// ```ignore
+/// (first [1 2 3])
+/// ; => (2 3)
+/// ```
+fn rest(args: Vec<Expr>) -> ExprResult {
+    mal_arg_length_check!("rest", 1, args);
+
+    match &args[0] {
+        Expr::List(v) | Expr::Vec(v) => {
+            if v.is_empty() {
+                Ok(Expr::List(vec![]))
+            } else {
+                Ok(Expr::List(v[1..].to_vec()))
+            }
+        }
+
+        Expr::Constant(Atom::Nil) => Ok(Expr::List(vec![])),
+
+        e => Err(Error::s(format!(
+            "rest: Expected list or vector or nil, found {}",
+            e
+        ))),
+    }
 }
 
 /// Just a convenience function for making a `HashMapKey::Sym(String)`.
@@ -466,6 +552,11 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
         (hkm!("println"), Expr::func(println_fn)),
         // List functions:
         (hkm!("list"), Expr::func(|args| Ok(Expr::List(args)))),
+        (hkm!("cons"), Expr::func(cons)),
+        (hkm!("concat"), Expr::func(concat)),
+        (hkm!("nth"), Expr::func(nth)),
+        (hkm!("first"), Expr::func(first)),
+        (hkm!("rest"), Expr::func(rest)),
         // Collection functions (i.e. lists, vecs, and hashmaps)
         (
             hkm!("empty?"),
@@ -475,8 +566,6 @@ pub fn get_ns() -> Vec<(HMK, Expr)> {
             hkm!("count"),
             Expr::func(|args| args.get(0).unwrap_or(&Expr::Constant(Atom::Nil)).count()),
         ),
-        (hkm!("cons"), Expr::func(cons)),
-        (hkm!("concat"), Expr::func(concat)),
         // Atom-related functions:
         (hkm!("atom"), Expr::func(atom)),
         (hkm!("deref"), Expr::func(deref)),

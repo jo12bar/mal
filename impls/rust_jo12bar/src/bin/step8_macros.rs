@@ -100,6 +100,18 @@ fn get_builtin_env() -> Result<Arc<Env>, Box<dyn std::error::Error>> {
         &builtin_env,
     )?;
 
+    // Define the `cond` function:
+    rep(
+        r#"(defmacro! cond (fn* (& xs)
+            (if (> (count xs) 0)
+                (list 'if (first xs)
+                    (if (> (count xs) 1)
+                        (nth xs 1)
+                        (throw "odd number of forms to cond"))
+                    (cons 'cond (rest (rest xs))))))))"#,
+        &builtin_env,
+    )?;
+
     Ok(builtin_env)
 }
 
