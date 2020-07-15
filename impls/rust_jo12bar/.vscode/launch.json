@@ -350,6 +350,47 @@
       },
       "args": [],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: step8_macros",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=step8_macros",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step8_macros",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "terminal": "integrated",
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug: Tests: step8_macros",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=step8_macros",
+          "--package=mal_rust_jo12bar"
+        ],
+        "filter": {
+          "name": "step8_macros",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

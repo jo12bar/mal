@@ -198,6 +198,7 @@ impl Expr {
             params: fn_arg_keys,
             env: fenv,
             is_variadic: has_var_arg,
+            is_macro: false,
             eval: Arc::new(eval),
         }))
     }
@@ -345,6 +346,16 @@ impl Expr {
         // Set the Atom's value to the new value, and return the new value.
         self.atom_reset(new_val)
             .map_err(|e| Error::s(format!("swap!: {}", e)))
+    }
+
+    /// Returns `true` if this is a `Expr::Constant(Atom::FnStar { is_macro, .. })`,
+    /// where `is_macro` is `true`. Returns `false` otherwise.
+    pub fn is_macro_call(&self) -> bool {
+        match self {
+            Self::Constant(Atom::FnStar { is_macro, .. }) if *is_macro => true,
+
+            _ => false,
+        }
     }
 }
 

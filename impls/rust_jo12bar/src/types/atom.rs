@@ -41,6 +41,10 @@ pub enum Atom {
         /// Whether or not the `fn*` is variadic.
         is_variadic: bool,
 
+        /// Whether or not the function is a macro. Macros have the ability to
+        /// modify MAL AST.
+        is_macro: bool,
+
         /// The function to evaluate the function body with.
         /// The first parameter will be `body`, and the second will be `env`.
         eval: Arc<dyn Fn(Expr, &Arc<Env>) -> ExprResult + Send + Sync>,
@@ -137,11 +141,13 @@ impl fmt::Debug for Atom {
                 eval,
                 env,
                 is_variadic,
+                is_macro,
             } => f
                 .debug_struct("FnStar")
                 .field("body", body)
                 .field("params", params)
                 .field("is_variadic", is_variadic)
+                .field("is_macro", is_macro)
                 .field("env", env)
                 .field(
                     "eval",
