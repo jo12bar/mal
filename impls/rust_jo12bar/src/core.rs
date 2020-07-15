@@ -141,9 +141,9 @@ macro_rules! mal_bin_op {
 /// ```
 /// # #[macro_use] extern crate mal_rust_jo12bar;
 /// # use mal_rust_jo12bar::core::binary_num_op;
-/// # use mal_rust_jo12bar::types::{Expr, Error};
+/// # use mal_rust_jo12bar::types::{Expr, ExprResult};
 /// # fn main() {
-/// let closure_1 = |args: Vec<Expr>| -> Result<Expr, Error> {
+/// let closure_1 = |args: Vec<Expr>| -> ExprResult {
 ///     binary_num_op(|a, b| a + b, |a, b| a + b, args)
 /// };
 ///
